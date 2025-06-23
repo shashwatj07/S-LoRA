@@ -17,6 +17,13 @@ python launch_server.py --num-adapter 1 --device debug --backend dm
 python run_exp.py --debug --backend dm --suite swap
 ```
 
+# Example Run With TP
+```
+cd benchmarks
+python launch_server.py --num-adapter 1 --num-token 10000 --model-setting S1 --device h100 --backend dm --tp 8
+python run_exp.py --mode synthetic --model-setting S1 --output output.jsonl --suite default --backend dm
+```
+
 # Test Correctness
 ```
 cd test/test_e2e
