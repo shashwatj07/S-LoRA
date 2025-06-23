@@ -6,3 +6,5 @@ dist
 .idea
 *.swp
 *.so
+benchmarks/tensor*.pt
+.vscode

@@ -4,7 +4,7 @@ import re
 import torch
 import os
 
-from mprophet.lora_config import get_lora_config_json
+from dancingmodel.mprophet.lora_config import get_lora_config_json
 
 from dancingmodel.models.peft.layer_weights.hf_load_utils import load_hf_weights
 from dancingmodel.models.peft.layer_weights.lora_layer_weight import LoraLayerWeight

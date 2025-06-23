@@ -53,8 +53,8 @@ from .api_models import (
     ChatCompletionStreamResponseChoice,
 )
 
-from mprophet.measure import ModelProphet
-from mprophet.lora_stats import LoRAProphet
+from dancingmodel.mprophet.measure import ModelProphet
+from dancingmodel.mprophet.lora_stats import LoRAProphet
 
 
 GB = 1024 ** 3

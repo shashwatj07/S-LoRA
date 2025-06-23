@@ -2,7 +2,7 @@ from collections import namedtuple
 import itertools
 
 BASE_MODEL = {
-        "S1": "huggyllama/llama-7b",
+        "S1": "huggyllama/llama-70b-m",
         "S2": "huggyllama/llama-7b",
         "S3": "huggyllama/llama-13b",
         "S4": "huggyllama/llama-13b",
@@ -12,7 +12,7 @@ BASE_MODEL = {
 }
 
 LORA_DIR = {
-        "S1": ["dummy-lora-7b-rank-16"],
+        "S1": ["dummy-lora-13b-rank-64"],
         "S2": ["dummy-lora-7b-rank-64", "dummy-lora-7b-rank-32",
                "dummy-lora-7b-rank-16", "dummy-lora-7b-rank-8"],
         "S3": ["dummy-lora-13b-rank-16"],
@@ -39,6 +39,15 @@ BenchmarkConfig = namedtuple(
 
 
 paper_suite = {
+    "default": BenchmarkConfig(
+        num_adapters = [1],
+        alpha = [1],
+        req_rate = [1, 2, 4, 8, 16],
+        cv = [1],
+        duration = [1],
+        input_range = [[i, i+1] for i in range(100, 2001, 100)],
+        output_range = [[128, 129]],
+    ),
     "ablation-no-mem": BenchmarkConfig(
         num_adapters = [1, 10, 25, 50, 100, 200],
         alpha = [1],

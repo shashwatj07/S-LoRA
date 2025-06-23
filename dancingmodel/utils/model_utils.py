@@ -1,6 +1,6 @@
 from transformers.configuration_utils import PretrainedConfig
 
-from mprophet.model_config import get_config_json
+from dancingmodel.mprophet.model_config import get_config_json
 
 
 def get_model_config(model_dir, dummy=False):

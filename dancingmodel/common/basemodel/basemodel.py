@@ -9,7 +9,7 @@ from dancingmodel.common.mem_allocator import MemoryAllocator
 from dancingmodel.common.infer_utils import init_bloc
 from dancingmodel.common.build_utils import repair_config
 
-from mprophet.model_config import get_config_json
+from dancingmodel.mprophet.model_config import get_config_json
 
 
 class TpPartBaseModel:
