@@ -148,7 +148,7 @@ __global__ void bgmv_multi_lora_rank_shrink_kernel(T* __restrict__ Y, const T* _
 }
 
 // nthrs = (2, 16, 4)
-template <int feat_in, int feat_out, typename T>
+template <int feat_in, int feat_out, int rank, typename T>
 __global__ void bgmv_multi_lora_rank_expand_kernel(T* __restrict__ Y, const T* __restrict__ X,
                                    const T* __restrict__ W,
                                    const int64_t* __restrict__ start_indicies,
@@ -162,7 +162,8 @@ __global__ void bgmv_multi_lora_rank_expand_kernel(T* __restrict__ Y, const T* _
   size_t batch_idx = blockIdx.y;
   size_t lora_idx = indicies[batch_idx];
   size_t lora_rank = lora_ranks[lora_idx] / 4;
-  constexpr size_t vec_size = 16 / sizeof(T);
+  // constexpr size_t vec_size = 16 / sizeof(T);
+  constexpr size_t vec_size = rank < 8 ? rank : (16 / sizeof(T));
   constexpr size_t tx = feat_in / vec_size;
   static_assert(feat_in % vec_size == 0);
   constexpr size_t ty = 32 / tx;
@@ -206,7 +207,7 @@ __global__ void bgmv_multi_lora_rank_expand_kernel(T* __restrict__ Y, const T* _
   }
 }
 
-template <int feat_in, int feat_out, typename T>
+template <int feat_in, int feat_out, int rank, typename T>
 void bgmv_kernel(T* __restrict__ Y, const T* __restrict__ X,
                  const T* __restrict__ W,
                  const int64_t* __restrict__ start_indicies,
@@ -216,7 +217,8 @@ void bgmv_kernel(T* __restrict__ Y, const T* __restrict__ X,
                  int64_t qkvo,
                  int64_t batch_size,
                  const T* __restrict__ lora_scales) {
-  size_t vec_size = 16 / sizeof(T);
+  // size_t vec_size = 16 / sizeof(T);
+  size_t vec_size = rank < 8 ? rank : (16 / sizeof(T));
   if constexpr (feat_in < feat_out) {
     size_t tx = feat_in / vec_size;
     size_t ty = 32 / tx;
@@ -224,7 +226,7 @@ void bgmv_kernel(T* __restrict__ Y, const T* __restrict__ X,
     dim3 nblks(feat_out / (ty * tz), batch_size);
     dim3 nthrs(tx, ty, tz);
 
-    bgmv_multi_lora_rank_expand_kernel<feat_in, feat_out>
+    bgmv_multi_lora_rank_expand_kernel<feat_in, feat_out, rank>
         <<<nblks, nthrs>>>(Y, X, W, start_indicies, 
                            lora_ranks, loc_indicies, indicies,
                            qkvo, lora_scales);
@@ -240,8 +242,8 @@ void bgmv_kernel(T* __restrict__ Y, const T* __restrict__ X,
   }
 }
 
-#define INST_BGMV(feat_in, feat_out, T)                                    \
-  template void bgmv_kernel<feat_in, feat_out>(                            \
+#define INST_BGMV(feat_in, feat_out, rank, T)                                    \
+  template void bgmv_kernel<feat_in, feat_out, rank>(                            \
       T* __restrict__ Y, const T* __restrict__ X, const T* __restrict__ W, \
       const int64_t* __restrict__ start_indicies,                           \
       const int64_t* __restrict__ lora_ranks,                           \
@@ -250,5 +252,5 @@ void bgmv_kernel(T* __restrict__ Y, const T* __restrict__ X,
       int64_t batch_size, const T* __restrict__ lora_scales);
 
 #define INST_BGMV_TWOSIDE(T, narrow, wide) \
-  INST_BGMV(narrow, wide, T)               \
-  INST_BGMV(wide, narrow, T)
+  INST_BGMV(narrow, wide, narrow, T)               \
+  INST_BGMV(wide, narrow, narrow, T)

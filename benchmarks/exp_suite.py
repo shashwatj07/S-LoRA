@@ -12,7 +12,7 @@ BASE_MODEL = {
 }
 
 LORA_DIR = {
-        "S1": ["dummy-lora-13b-rank-64"],
+        "S1": ["dummy-lora-13b-rank-8"],
         "S2": ["dummy-lora-7b-rank-64", "dummy-lora-7b-rank-32",
                "dummy-lora-7b-rank-16", "dummy-lora-7b-rank-8"],
         "S3": ["dummy-lora-13b-rank-16"],

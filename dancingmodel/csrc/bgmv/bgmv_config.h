@@ -1,6 +1,6 @@
 #pragma once
 
-template <int feat_in, int feat_out, typename T>
+template <int feat_in, int feat_out, int rank, typename T>
 void bgmv_kernel(T* __restrict__ Y, const T* __restrict__ X,
                  const T* __restrict__ W, const int64_t* __restrict__ start_indicies,
                  const int64_t* __restrict__ lora_ranks, const int64_t* __restrict__ loc_indicies,
@@ -10,6 +10,7 @@ void bgmv_kernel(T* __restrict__ Y, const T* __restrict__ X,
 // clang-format off
 
 #define FOR_BGMV_WIDE(f, T, narrow) \
+    f(T, narrow, 512) \
     f(T, narrow, 768) \
     f(T, narrow, 1024) \
     f(T, narrow, 1280) \
@@ -42,6 +43,9 @@ void bgmv_kernel(T* __restrict__ Y, const T* __restrict__ X,
 //    FOR_BGMV_WIDE(f, T, 4) \
 
 #define FOR_BGMV_WIDE_NARROW(f, T) \
+    FOR_BGMV_WIDE(f, T, 1) \
+    FOR_BGMV_WIDE(f, T, 2) \
+    FOR_BGMV_WIDE(f, T, 4) \
     FOR_BGMV_WIDE(f, T, 8) \
     FOR_BGMV_WIDE(f, T, 16) \
     FOR_BGMV_WIDE(f, T, 32) \

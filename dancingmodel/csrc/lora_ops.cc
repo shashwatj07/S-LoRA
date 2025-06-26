@@ -54,14 +54,14 @@ inline bool launch_bgmv_kernel(T* Y, const T* X, const T* W,
                                int64_t batch_size,
                                const T* lora_scales) {
   switch (pack_u16(in_features, out_features)) {
-#define CASE_ONESIDE(_T, feat_in, feat_out)                           \
+#define CASE_ONESIDE(_T, feat_in, feat_out, rank)                           \
   case pack_u16(feat_in, feat_out):                                   \
-    bgmv_kernel<feat_in, feat_out>(Y, X, W, start_indicies, lora_ranks, loc_indicies, indicies, \
+    bgmv_kernel<feat_in, feat_out, rank>(Y, X, W, start_indicies, lora_ranks, loc_indicies, indicies, \
                                    qkvo, batch_size, lora_scales);     \
     break;
 #define CASE(_T, narrow, wide)  \
-  CASE_ONESIDE(T, narrow, wide) \
-  CASE_ONESIDE(T, wide, narrow)
+  CASE_ONESIDE(T, narrow, wide, narrow) \
+  CASE_ONESIDE(T, wide, narrow, narrow)
 
     FOR_BGMV_WIDE_NARROW(CASE, _)
 #undef CASE
