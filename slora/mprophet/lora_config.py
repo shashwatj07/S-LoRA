@@ -53,6 +53,15 @@ class LoRAConfig:
                     "v_proj",
                     "o_proj",
                     ]
+        elif "dummy-lora-30b-rank" in name:
+            self.base_model = None
+            self.rank = int(re.search(r'rank-(\d+)', name).group(1))
+            self.target_modules = [
+                    "q_proj",
+                    "k_proj",
+                    "v_proj",
+                    "o_proj",
+                    ]
         else:
             raise NotImplementedError
 

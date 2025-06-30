@@ -12,6 +12,7 @@ void bgmv_kernel(T* __restrict__ Y, const T* __restrict__ X,
 #define FOR_BGMV_WIDE(f, T, narrow) \
     f(T, narrow, 512) \
     f(T, narrow, 768) \
+    f(T, narrow, 896) \
     f(T, narrow, 1024) \
     f(T, narrow, 1280) \
     f(T, narrow, 1664) \
