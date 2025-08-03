@@ -19,7 +19,7 @@ from typing import List, Tuple
 import aiohttp
 
 from exp_suite import BenchmarkConfig, get_all_suites, to_dict, BASE_MODEL, LORA_DIR
-from trace import generate_requests, get_real_requests
+from trace import generate_requests, get_real_requests, Request, dummy_prompt
 sys.path.append("../bench_lora")
 from dancingmodel.utils.metric import reward, attainment_func
 
@@ -57,7 +57,7 @@ async def send_request(
     else:
         url = server + "/generate_stream"
     
-    if backend in ["dm"]:
+    if backend in ["dm", "system", "baseline"]:
         data = {
             'model_dir': model_dir,
             'lora_dir': adapter_dir,
@@ -153,7 +153,7 @@ def get_adapter_dirs(num_adapters, adapter_dirs, backend=None):
     for i in range(num_iter):
         for adapter_dir in adapter_dirs:
             ret.append(adapter_dir + f"-{i}")
-    # print(ret)
+    print(ret)
     return ret
 
 def get_res_stats(per_req_latency, benchmark_time, backend, warmup_time=0, warmup_num=0):
@@ -218,58 +218,41 @@ def get_res_stats(per_req_latency, benchmark_time, backend, warmup_time=0, warmu
               "avg_per_output_token_latency": avg_per_output_token_latency,
               "avg_first_token_latency": avg_first_token_latency,
               "avg_satisfaction": avg_satisfaction,
-              "avg_attainment": avg_attainment}
-    res = {"config": to_dict(config), "result": result}
+              "avg_attainment": avg_attainme
+    res = {"result": result}
     
     return res
 
+def read_requests(trace_file):
+    requests = []
+    adapter_dirs = set()
+    with open(trace_file, "r") as f:
+        lines = f.readlines()
+        for line in lines[1:]:
+            elements = line.split(",")
+            requests.append(Request(req_id=int(elements[0]), model_dir=elements[1], adapter_dir=elements[2], 
+              prompt=dummy_prompt(int(elements[3])), prompt_len=int(elements[3]),
+              output_len=int(elements[4]), req_time=float(elements[5])))
+            # requests.append((int(elements[0]),elements[1],elements[2],int(elements[3]),int(elements[4]),float(elements[5])))
+            adapter_dirs.add(elements[2])
+    requests.sort(key=lambda r: r.req_time)
+    return list(adapter_dirs), requests
 
-def run_exp(model_setting, backend, server, config, output, mode, seed=42, debug=False):
-    if mode == "real":
-        print("*** num_adapters, cv and alpha are not used in real mode ***")
-    print([(k, v) for k, v in zip(BenchmarkConfig._fields, config)])
-
-    num_adapters, alpha, req_rate, cv, duration, input_range, output_range = config
-    # assert duration >= 30
-    if mode == "synthetic":
-        base_model = BASE_MODEL[model_setting]
-        adapter_dirs = LORA_DIR[model_setting]
-        adapter_dirs = get_adapter_dirs(num_adapters, adapter_dirs)
-        adapter_dirs = [(base_model, adapter_dirs[i]) for i in range(num_adapters)]
-        print(adapter_dirs)
-        if num_adapters == 0:
-            adapter_dirs = [(base_model, None)]
-            num_adapters = 1
-        requests = generate_requests(num_adapters, alpha, req_rate, cv, duration,
-                                 input_range, output_range, adapter_dirs,
-                                 seed=seed)
-        avg_prompt_len = np.mean([req.prompt_len for req in requests])
-        avg_output_len = np.mean([req.output_len for req in requests])
-        avg_len = np.mean([req.prompt_len + req.output_len for req in requests])
-        print("avg_len:", avg_len, "avg_prompt_len:", avg_prompt_len, "avg_output_len:", avg_output_len)
-    else:
-        # first generate your data using real_trace/clean_chat_data.py
-        base_model = BASE_MODEL[model_setting]
-        adapter_dirs = LORA_DIR[model_setting]
-        adapter_dirs, requests = get_real_requests(trace_file="../../../real_trace/clean_chat_conv_20231019.json",
-                                                   req_rate=req_rate, duration=duration,
-                                                   base_model=base_model, adapter_dirs=adapter_dirs,
-                                                   input_range=input_range, output_range=output_range,
-                                                   seed=seed)
-        # print(requests)
-        avg_prompt_len = np.mean([req.prompt_len for req in requests])
-        avg_output_len = np.mean([req.output_len for req in requests])
-        avg_len = np.mean([req.prompt_len + req.output_len for req in requests])
-        print("num_adapters", len(adapter_dirs), "num_requests", len(requests), "avg_len:", avg_len, "avg_prompt_len:", avg_prompt_len, "avg_output_len:", avg_output_len)
+def run_exp(backend, server, trace_file, output, debug=False):
+    # first generate your data using real_trace/clean_chat_data.py
+    # base_model = BASE_MODEL[model_setting]
+    # adapter_dirs = LORA_DIR[model_setting]
+    adapter_dirs, requests = read_requests(trace_file=trace_file)
+    # print(requests)
+    avg_prompt_len = np.mean([req.prompt_len for req in requests])
+    avg_output_len = np.mean([req.output_len for req in requests])
+    avg_len = np.mean([req.prompt_len + req.output_len for req in requests])
+    print("num_adapters", len(adapter_dirs), "num_requests", len(requests), "avg_len:", avg_len, "avg_prompt_len:", avg_prompt_len, "avg_output_len:", avg_output_len)
         
     if debug:
         print("num requests:", len(requests))
         for req in requests[:4]:
             print(req)
-
-    if backend == "vllm-packed":
-        for i in range(len(adapter_dirs)):
-            vllm_packed_adapter_dir_to_url_map[adapter_dirs[i][1]] = f"http://127.0.0.1:{8000 + i}"
 
     # benchmark
     benchmark_start_time = time.time()
@@ -278,7 +261,7 @@ def run_exp(model_setting, backend, server, config, output, mode, seed=42, debug
     benchmark_time = benchmark_end_time - benchmark_start_time
 
     warmup_time = 10
-    warmup_num = int(req_rate * warmup_time)
+    warmup_num = int(32)
     res = get_res_stats(per_req_latency, benchmark_time, backend,
                         warmup_time=warmup_time, warmup_num=warmup_num)
 
@@ -289,10 +272,9 @@ def run_exp(model_setting, backend, server, config, output, mode, seed=42, debug
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", type=str, required=True,
-                        choices=["dm", "vllm", "lightllm", "vllm-packed"])
-    parser.add_argument("--suite", type=str, default="default", required=True)
+                        choices=["system", "baseline"])
 
-    parser.add_argument("--model-setting", type=str, default="S1")
+    # parser.add_argument("--model-setting", type=str, default="S1")
     parser.add_argument("--debug", action="store_true")
 
     parser.add_argument("--append", action="store_true")
@@ -301,9 +283,9 @@ if __name__ == "__main__":
     parser.add_argument("--no-lora-compute", action="store_true")
     parser.add_argument("--no-lora-swap", action="store_true")
     parser.add_argument("--no-lora-copy", action="store_true")
-    parser.add_argument("--mode", default="synthetic", choices=["synthetic", "real"])
+    parser.add_argument("--trace-file-path", required=True)
 
-    parser.add_argument("--server", type=str, default="http://localhost:8000")
+    parser.add_argument("--servers", "-s", type=str, nargs="+", required=True)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()
@@ -325,7 +307,7 @@ if __name__ == "__main__":
     if args.debug or args.breakdown:
         args.output = "debug_" + args.output
 
-    suites = get_all_suites(mode=args.mode, debug=args.debug, suite=args.suite, breakdown=args.breakdown)
+    # suites = get_all_suites(mode=args.mode, debug=args.debug, suite=args.suite, breakdown=args.breakdown)
 
     if not args.append:
         os.system(f"rm {args.output}")
@@ -335,7 +317,7 @@ if __name__ == "__main__":
             lines = f.readlines()
         results = [json.loads(line)["config"] for line in lines]
 
-    for config in tqdm(suites, desc="suites"):
-        if to_dict(config) not in results:
-            stats = run_exp(args.model_setting, args.backend, args.server, config,
-                            args.output, args.mode, args.seed, args.debug)
+    # for config in tqdm(suites, desc="suites"):
+    #     if to_dict(config) not in results:
+    stats = run_exp(args.backend, args.servers[0], args.trace_file_path,
+                            args.output, args.debug)

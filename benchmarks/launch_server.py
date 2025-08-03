@@ -44,6 +44,8 @@ if __name__ == "__main__":
 
     if args.backend == "dm":
         cmd = f"python -m dancingmodel.server.api_server --max_total_token_num {args.num_token}"
+        cmd += f" --host 0.0.0.0"
+        cmd += f" --port 8000"
         cmd += f" --model {base_model}"
         cmd += f" --tokenizer_mode auto"
 
