@@ -7,7 +7,9 @@ from typing import List, Tuple, Any
 from tqdm import tqdm
 import random
 from transformers import AutoTokenizer
+from functools import total_ordering
 
+@total_ordering
 class Request:
     def __init__(self, req_id, model_dir, adapter_dir, prompt, prompt_len, output_len, req_time):
         self.req_id = req_id
@@ -18,13 +20,17 @@ class Request:
         self.output_len = output_len
         self.req_time = req_time
 
-    
     def __repr__(self):
         return f"req_id={self.req_id}, " \
                f"model_dir={self.model_dir}, adapter_dir={self.adapter_dir}, " \
                f"prompt_len={self.prompt_len}, output_len={self.output_len}, " \
                f"req_time={self.req_time}"
 
+    def __eq__(self, other):
+        return self.req_id == other.req_id
+
+    def __lt__(self, other):
+        return self.req_time < other.req_time
 
 def dummy_prompt(prompt_len):
     return "Hello " * prompt_len

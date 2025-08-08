@@ -111,7 +111,7 @@ async def send_request(
 
     request_end_time = time.time()
     request_latency = request_end_time - request_start_time
-    log_line = f"req_id {req_id} prompt_len {prompt_len} output_len {output_len} "\
+    log_line = f"req_id {req_id} adapter_dir {adapter_dir} prompt_len {prompt_len} output_len {output_len} "\
           f"request_latency {request_latency:.2f} s, first_token_latency {first_token_latency:.2f} s\n"
     print(log_line)
     with open(f"fine_{output_file}", "a") as f:

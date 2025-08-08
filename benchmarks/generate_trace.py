@@ -22,12 +22,16 @@ def get_weights(size, dist):
         total_weight = sum(weights)
         dist = [w / total_weight for w in weights]
         return random.shuffle(dist)
+    elif dist == "skew":
+        return [1.0 for _ in range(20)] + [4.0 for _ in range(5)]
     elif dist == "uniform":
         return [1.0 / size for _ in range(size)]
 
 def get_times(size, end_time, dist):
     if dist == "uniform":
         return np.random.uniform(0, end_time, size)
+    elif dist == "even":
+        return np.linspace(0, end_time, size)
 
 def main():
     parser = argparse.ArgumentParser(description="Generate Traces")
@@ -62,6 +66,8 @@ def main():
     df = pd.read_csv("/home/t-shajaiswal/AzurePublicDataset/AzureLLMInferenceTrace_conv_1week.csv")
     df = df[(df['ContextTokens'] <= 1024) & (df['GeneratedTokens'] <= 256)]
     df = df.sample(n=num_samples)
+    # df['ContextTokens'] = 512
+    # df['GeneratedTokens'] = 128
     df['adapter'] = samples
     df['model'] = model
     df['timestamp'] = sorted(times)

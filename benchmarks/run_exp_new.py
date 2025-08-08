@@ -9,10 +9,13 @@ import argparse
 import asyncio
 import csv
 import json
+import re
 import numpy as np
 import os
 import sys
 import time
+import random
+import bisect
 from tqdm import tqdm
 from typing import List, Tuple
 
@@ -28,6 +31,7 @@ GB = 1024 ** 3
 # (prompt len, output len, latency)
 REQUEST_LATENCY: List[Tuple[int, int, float]] = []
 vllm_packed_adapter_dir_to_url_map = {}
+
 
 def get_peak_mem(server):
     url = server + "/get_peak_mem"
@@ -85,9 +89,10 @@ async def send_request(
             'max_tokens': output_len,
             'ignore_eos': True,
         }
-
+    # with open(f"fine_{output_file}", "a") as f:
+    #     f.write(f"sent {req_id}, {server}\n")
     first_token_latency = None
-    timeout = aiohttp.ClientTimeout(total=3 * 3600)
+    timeout = aiohttp.ClientTimeout(total=300)
     async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
         while True:
             async with session.post(url, headers=headers, json=data) as response:
@@ -111,7 +116,7 @@ async def send_request(
 
     request_end_time = time.time()
     request_latency = request_end_time - request_start_time
-    log_line = f"req_id {req_id} prompt_len {prompt_len} output_len {output_len} "\
+    log_line = f"req_id {req_id} {server} adapter_dir {adapter_dir} prompt_len {prompt_len} output_len {output_len} "\
           f"request_latency {request_latency:.2f} s, first_token_latency {first_token_latency:.2f} s\n"
     print(log_line)
     with open(f"fine_{output_file}", "a") as f:
@@ -119,10 +124,9 @@ async def send_request(
     REQUEST_LATENCY.append((prompt_len, output_len, request_latency, first_token_latency))
     return (prompt_len, output_len, request_latency, first_token_latency)
 
-
-async def benchmark(
+async def benchmark_baseline(
     backend: str,
-    server: str,
+    server_map: str,
     input_requests: List[Tuple[str, str, str, int, int]],
     output,
     debug=False,
@@ -135,7 +139,92 @@ async def benchmark(
             print(f"{req.req_id} {req.req_time:.5f} wait {start + req.req_time - time.time():.5f} "
                   f"{req.adapter_dir}")
         # print(req)
-        task = asyncio.create_task(send_request(backend, server,
+        
+        task = asyncio.create_task(send_request(backend, server_map[req.adapter_dir],
+                                                req.req_id, req.model_dir, req.adapter_dir, req.prompt,
+                                                req.prompt_len, req.output_len, output, debug))
+        tasks.append(task)
+    latency = await asyncio.gather(*tasks)
+    return latency
+
+async def benchmark_system(
+    backend: str,
+    server_map: str,
+    adapter_dirs,
+    input_requests: List[Tuple[str, str, str, int, int]],
+    output,
+    debug=False,
+) -> None:
+    start = time.time()
+    tasks: List[asyncio.Task] = []
+    last_time = input_requests[0]
+    step = 10
+    for req in input_requests:
+        # print(req.req_id)
+        if req.req_time > last_time.req_time // 1 + step:
+            demand_tps = {a:0 for a in adapter_dirs}
+            index = input_requests.index(last_time)
+            while input_requests[index].req_time < req.req_time:
+                # rank = int(re.search(r'rank-(\d+)', input_requests[index].adapter_dir).group(1))
+                demand_tps[input_requests[index].adapter_dir] = demand_tps.get(input_requests[index].adapter_dir) + (input_requests[index].prompt_len + input_requests[index].output_len) / step
+                index += 1
+            # print(demand_tps)
+            adapter_demand = []
+            for adapter, tps in demand_tps.items():
+                rank = int(re.search(r'rank-(\d+)', adapter).group(1))
+                adapter_demand.append((rank, tps, adapter))
+            adapter_demand.sort(reverse=True)
+
+            server_tps = {8: 2400, 16: 2100, 32: 1900, 64:1700, 128:1600}
+            # greedy bin packing
+            
+            def is_compatible(group, tuple, scale):
+                ranks = [r for  r, _, _ in group]
+                ranks.append(tuple[0])
+                max_rank = max(ranks)
+                tps = sum([tps for _, tps, _ in group]) + tuple[1]
+                return tps <= (server_tps[max_rank] * scale)
+            # def get_tps(adapters, start, end):
+            #     adapter_slice = adapters[start:end+1]
+            #     ranks = [r for  r, _, _ in adapter_slice]
+            #     max_rank = max(ranks)
+            #     tps = sum([tps for _, tps, _ in adapter_slice])
+            #     return tps / server_tps[max_rank]
+            # tps_delta = []
+            # for i in range(len(adapter_demand) - 1):
+            #     tps1 = get_tps(adapter_demand, 0, i)
+            #     tps2 = get_tps(adapter_demand, i+1, len(adapter_demand) - 1)
+            #     tps_delta.append(abs(tps1 - tps2))
+            # partition_index = tps_delta.index(min(tps_delta))
+            # print(partition_index)
+            servers = sorted(list(set(server_map.values())))
+            assert len(servers) == 2
+            # adapter_groups = [adapter_demand[0:partition_index+1], adapter_demand[partition_index+1:]]
+            adapter_groups = [[] for _ in servers]
+            x = 0
+            for i, adapter_tuple in enumerate(adapter_demand):
+                if is_compatible(adapter_groups[x], adapter_tuple):
+                    adapter_groups[x].append(adapter_tuple)
+                elif x + 1 < len(adapter_groups):
+                    x += 1
+                    adapter_groups[x].append(adapter_tuple)
+                else:
+                    for j in range(i, len(adapter_demand)):
+                        adapter_groups[j % len(adapter_groups)].append(adapter_demand[j])
+            print(adapter_groups)
+            server_map = {}
+            for i, server in enumerate(servers):
+                for _, _, adapter in adapter_groups[i]:
+                    server_map[adapter] = server
+            print(server_map)
+            last_time = req
+        await asyncio.sleep(start + req.req_time - time.time())
+        if debug:
+            print(f"{req.req_id} {req.req_time:.5f} wait {start + req.req_time - time.time():.5f} "
+                  f"{req.adapter_dir}")
+        # print(req)
+        
+        task = asyncio.create_task(send_request(backend, server_map[req.adapter_dir],
                                                 req.req_id, req.model_dir, req.adapter_dir, req.prompt,
                                                 req.prompt_len, req.output_len, output, debug))
         tasks.append(task)
@@ -218,7 +307,7 @@ def get_res_stats(per_req_latency, benchmark_time, backend, warmup_time=0, warmu
               "avg_per_output_token_latency": avg_per_output_token_latency,
               "avg_first_token_latency": avg_first_token_latency,
               "avg_satisfaction": avg_satisfaction,
-              "avg_attainment": avg_attainme
+              "avg_attainment": avg_attainment}
     res = {"result": result}
     
     return res
@@ -238,7 +327,7 @@ def read_requests(trace_file):
     requests.sort(key=lambda r: r.req_time)
     return list(adapter_dirs), requests
 
-def run_exp(backend, server, trace_file, output, debug=False):
+def run_exp(backend, servers, trace_file, output, debug=False):
     # first generate your data using real_trace/clean_chat_data.py
     # base_model = BASE_MODEL[model_setting]
     # adapter_dirs = LORA_DIR[model_setting]
@@ -253,12 +342,43 @@ def run_exp(backend, server, trace_file, output, debug=False):
         print("num requests:", len(requests))
         for req in requests[:4]:
             print(req)
-
-    # benchmark
-    benchmark_start_time = time.time()
-    per_req_latency = asyncio.run(benchmark(backend, server, requests, output, debug))
-    benchmark_end_time = time.time()
-    benchmark_time = benchmark_end_time - benchmark_start_time
+    if backend == "baseline":
+        # benchmark
+        random.seed(42)
+        shuffled = adapter_dirs.copy()
+        random.shuffle(shuffled)
+        
+        # Split shuffled list into n parts as evenly as possible
+        k, m = divmod(len(shuffled), len(servers))
+        # server_map = {adapter:server_name for adapter in shuffled[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i, server_name in enumerate(servers)}
+        server_map = {}
+        for i, server_name in enumerate(servers):
+            start = i * k + min(i, m)
+            end = (i + 1) * k + min(i + 1, m)
+            for adapter in shuffled[start:end]:
+                server_map[adapter] = server_name
+        print(server_map)
+        benchmark_start_time = time.time()
+        per_req_latency = asyncio.run(benchmark_baseline(backend, server_map, requests, output, debug))
+        benchmark_end_time = time.time()
+        benchmark_time = benchmark_end_time - benchmark_start_time
+    elif backend == "system":
+        # benchmark
+        adapters = sorted(adapter_dirs)
+        
+        # Split shuffled list into n parts as evenly as possible
+        k, m = divmod(len(adapters), len(servers))
+        server_map = {}
+        for i, server_name in enumerate(servers):
+            start = i * k + min(i, m)
+            end = (i + 1) * k + min(i + 1, m)
+            for adapter in adapters[start:end]:
+                server_map[adapter] = server_name
+        print(server_map)
+        benchmark_start_time = time.time()
+        per_req_latency = asyncio.run(benchmark_system(backend, server_map, adapter_dirs, requests, output, debug))
+        benchmark_end_time = time.time()
+        benchmark_time = benchmark_end_time - benchmark_start_time
 
     warmup_time = 10
     warmup_num = int(32)
@@ -319,5 +439,5 @@ if __name__ == "__main__":
 
     # for config in tqdm(suites, desc="suites"):
     #     if to_dict(config) not in results:
-    stats = run_exp(args.backend, args.servers[0], args.trace_file_path,
+    stats = run_exp(args.backend, args.servers, args.trace_file_path,
                             args.output, args.debug)
