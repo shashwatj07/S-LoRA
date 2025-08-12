@@ -158,7 +158,7 @@ async def benchmark_system(
     start = time.time()
     tasks: List[asyncio.Task] = []
     last_time = input_requests[0]
-    step = 10
+    step = 30
     for req in input_requests:
         # print(req.req_id)
         if req.req_time > last_time.req_time // 1 + step:
@@ -178,7 +178,7 @@ async def benchmark_system(
             server_tps = {8: 2400, 16: 2100, 32: 1900, 64:1700, 128:1600}
             # greedy bin packing
             
-            def is_compatible(group, tuple, scale):
+            def is_compatible(group, tuple, scale=1):
                 ranks = [r for  r, _, _ in group]
                 ranks.append(tuple[0])
                 max_rank = max(ranks)
