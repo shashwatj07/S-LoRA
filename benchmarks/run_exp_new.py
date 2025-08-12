@@ -211,6 +211,7 @@ async def benchmark_system(
                 else:
                     for j in range(i, len(adapter_demand)):
                         adapter_groups[j % len(adapter_groups)].append(adapter_demand[j])
+                        break
             print(adapter_groups)
             server_map = {}
             for i, server in enumerate(servers):
