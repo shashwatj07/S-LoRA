@@ -262,37 +262,37 @@ def get_res_stats(per_req_latency, benchmark_time, backend, warmup_time=0, warmu
     strip_throughput = (len(per_req_latency) - warmup_num * 2) / (benchmark_time - warmup_time * 2)
     print(f"Throughput strip: {strip_throughput:.2f} requests/s")
 
-    # compute the latency statistics.
-    avg_latency = np.mean([latency for _, _, latency, _ in per_req_latency])
-    print(f"Average latency: {avg_latency:.2f} s")
-    avg_per_token_latency = np.mean([
+    percentiles = [10, 25, 50, 75, 90,95, 99]
+    e2e_latencies = [latency for _, _, latency, _ in per_req_latency]
+    per_token_latencies = [
         latency / (prompt_len + output_len)
         for prompt_len, output_len, latency, _ in per_req_latency
-    ])
-    print(f"Average latency per token: {avg_per_token_latency:.2f} s")
-    avg_per_output_token_latency = np.mean([
+    ]
+    per_output_token_latencies = [
         latency / output_len
         for _, output_len, latency, _ in per_req_latency
-    ])
-    print("Average latency per output token: "
-          f"{avg_per_output_token_latency:.2f} s")
-
-    # compute the first token latency
-    first_token_latency = [latency for _, _, _, latency in per_req_latency]
-    avg_first_token_latency = np.mean(first_token_latency)
-    print(f"Average first token latency: {avg_first_token_latency:.2f} s")
-    print(f"90 percentile first token latency: < {np.percentile(first_token_latency, 90):.2f} s")
-    print(f"50 percentile first token latency: < {np.percentile(first_token_latency, 50):.2f} s")
+    ]
+    first_token_latencies = [latency for _, _, _, latency in per_req_latency]
     abort_satisfaction = [0]*num_abort
-    satisfaction = [reward(latency) for _, _, _, latency in per_req_latency] + abort_satisfaction
-    avg_satisfaction = np.mean(satisfaction)
-    print(f"Average satisfaction: {avg_satisfaction:.2f}")
-    print(f"90 percentile satisfaction: > {np.percentile(satisfaction, 10):.2f}")
-    print(f"50 percentile satisfaction: > {np.percentile(satisfaction, 50):.2f}")
+    satisfactions = [reward(latency) for _, _, _, latency in per_req_latency] + abort_satisfaction
+    attainments = [attainment_func(latency) for _, _, _, latency in per_req_latency] + abort_satisfaction
 
-    attainment = [attainment_func(latency) for _, _, _, latency in per_req_latency] + abort_satisfaction
-    avg_attainment = np.mean(attainment)
-    print(f"Average attainment: {avg_attainment:.2f}")
+    # Build statistics in a loop to avoid repetition
+    metrics = {
+        "e2e": e2e_latencies,
+        "per_token": per_token_latencies,
+        "per_output_token": per_output_token_latencies,
+        "first_token": first_token_latencies,
+        "satisfaction": satisfactions,
+        "attainment": attainments,
+    }
+
+    stats = {}
+    for name, values in metrics.items():
+        stats[name] = {
+            "avg": np.mean(values),
+            **{f"p{p}": np.percentile(values, p) for p in percentiles}
+        }
 
     # dump results
     if backend == "dm":
@@ -304,11 +304,7 @@ def get_res_stats(per_req_latency, benchmark_time, backend, warmup_time=0, warmu
 
     result = {"total_time": benchmark_time, "gpu_peak_mem": single_gpu_peak_mem, "num_abort": num_abort,
               "throughput": throughput, "strip_throughput": strip_throughput,
-              "avg_latency": avg_latency, "avg_per_token_latency": avg_per_token_latency,
-              "avg_per_output_token_latency": avg_per_output_token_latency,
-              "avg_first_token_latency": avg_first_token_latency,
-              "avg_satisfaction": avg_satisfaction,
-              "avg_attainment": avg_attainment}
+              "stats": stats, "backend": backend}
     res = {"result": result}
     
     return res
