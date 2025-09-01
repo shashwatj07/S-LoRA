@@ -176,7 +176,8 @@ async def benchmark_system(
                 adapter_demand.append((rank, tps, adapter)) # tps here is expected tps
             adapter_demand.sort(reverse=True)
 
-            server_tps = {8: 2400, 16: 2100, 32: 1900, 64:1700, 128:1600} # operating point, fn of max rank
+            # server_tps = {8: 2400, 16: 2100, 32: 1900, 64:1700, 128:1600} # operating point, fn of max rank
+            server_tps = {8: 2725, 16: 2700, 32: 2675, 64: 2625, 128: 2525} # operating point, fn of max rank
             # TODO score = expected total tps / max rank operating point
             # assume 2000 as operating point of adapter for score of adapters
 
@@ -215,19 +216,18 @@ async def benchmark_system(
                     x += 1
                     adapter_groups[x].append(adapter_tuple)
                 else:
-                    # TODO log to new log file that overallocation happened for these adapters
                     with open("allocation_log.txt", "a") as f:
                         f.write(f"{last_time} Overallocation for adapters from index {i} to {len(adapter_demand) - 1} ({(len(adapter_demand) - 1 - i + 1) / len(adapter_demand) * 100:.2f} % of total adapters)\n")
                     for j in range(i, len(adapter_demand)):
                         adapter_groups[j % len(adapter_groups)].append(adapter_demand[j])
                     break
 
-            print(adapter_groups) # TODO  move to logfile with timestamp last_time
-            # TODO: log tps with s1:[(adapter, tps)], s2:[(adapter, tps)]
+            print(adapter_groups)
             with open("allocation_log.txt", "a") as f:
                 f.write(f"\n{last_time} Adapter groups:\n")
                 for i, group in enumerate(adapter_groups):
                     f.write(f"  Server {servers[i]}: {[(adapter, tps) for _, tps, adapter in group]}\n")
+                    f.write(f"  Server {servers[i]} total tps: {sum([tps for _, tps, _ in group])}\n")
                     
             server_map = {}
             for i, server in enumerate(servers):
