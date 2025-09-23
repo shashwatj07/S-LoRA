@@ -33,6 +33,7 @@ def get_times(size, end_time, dist, burst_size, burst_interval):
     elif dist == "even":
         return np.linspace(0, end_time, size)
     elif dist == "poisson":
+        #! the number of samples is not guaranteed to be rps * end_time
         lam = size / end_time  # average rate of events per unit time
         inter_arrival_times = np.random.exponential(1/lam, size)
         arrival_times = np.cumsum(inter_arrival_times)
@@ -80,6 +81,7 @@ def main():
     num_samples = int(rps * time)
     samples = random.choices(names, weights=normalized_weights, k=num_samples)
     times = get_times(num_samples, time, arrival_pattern, burst_size, burst_interval)
+    samples = random.choices(names, weights=normalized_weights, k=len(times))
     df = pd.read_csv("/home/t-shajaiswal/AzurePublicDataset/AzureLLMInferenceTrace_conv_1week.csv")
     df = df[(df['ContextTokens'] <= 1024) & (df['GeneratedTokens'] <= 256)]
     df = df.sample(n=num_samples)
