@@ -27,11 +27,24 @@ def get_weights(size, dist):
     elif dist == "uniform":
         return [1.0 / size for _ in range(size)]
 
-def get_times(size, end_time, dist):
+def get_times(size, end_time, dist, burst_size, burst_interval):
     if dist == "uniform":
         return np.random.uniform(0, end_time, size)
     elif dist == "even":
         return np.linspace(0, end_time, size)
+    elif dist == "poisson":
+        lam = size / end_time  # average rate of events per unit time
+        inter_arrival_times = np.random.exponential(1/lam, size)
+        arrival_times = np.cumsum(inter_arrival_times)
+        return arrival_times[arrival_times <= end_time]
+    elif dist == "bursty":
+        times = []
+        current_time = 0
+        while len(times) < size:
+            burst_times = np.random.uniform(current_time, current_time + burst_interval, burst_size)
+            times.extend(burst_times)
+            current_time += burst_interval * 2  # wait for the next burst
+        return np.array(sorted(times))[:size]
 
 def main():
     parser = argparse.ArgumentParser(description="Generate Traces")
@@ -42,6 +55,8 @@ def main():
                         help="Pass rank=frequency pairs like 8=3 16=4 128=6")
     parser.add_argument("--distribution", "-d", type=str, default="pareto", help="Popularity distribution of adapters")
     parser.add_argument("--arrival-pattern", "-a", type=str, default="uniform", help="Arrival pattern of requests")
+    parser.add_argument("--burst-size", type=int, default=10, help="Burst size if bursty arrival pattern is chosen")
+    parser.add_argument("--burst-interval", type=float, default=5, help="Burst interval if bursty arrival pattern is chosen")
     parser.add_argument("--rps", type=float, help="Total requests per second")
     parser.add_argument("--time", "-t", type=int, default=5*60, help="Total time duration")
     
@@ -53,6 +68,8 @@ def main():
     arrival_pattern = args.arrival_pattern
     rps = args.rps
     time = args.time
+    burst_size = args.burst_size
+    burst_interval = args.burst_interval
     size = model[model.index('-') + 1:]
     names = [] # initialize with model if base requests (no adapter) are to be included
     for rank in ranks_dict:
@@ -62,7 +79,7 @@ def main():
     normalized_weights = get_weights(len(names), dist)
     num_samples = int(rps * time)
     samples = random.choices(names, weights=normalized_weights, k=num_samples)
-    times = get_times(num_samples, time, arrival_pattern)
+    times = get_times(num_samples, time, arrival_pattern, burst_size, burst_interval)
     df = pd.read_csv("/home/t-shajaiswal/AzurePublicDataset/AzureLLMInferenceTrace_conv_1week.csv")
     df = df[(df['ContextTokens'] <= 1024) & (df['GeneratedTokens'] <= 256)]
     df = df.sample(n=num_samples)
