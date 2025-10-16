@@ -9,6 +9,7 @@ default to synthetic mode.
 import argparse
 import asyncio
 import csv
+from itertools import chain
 import json
 import re
 import numpy as np
@@ -225,7 +226,7 @@ def ensure_all_placed(adapter_groups, epsilon: float = 1e-3):
     for adapter, util in utils.items():
         assert abs(util - 1) < epsilon, f"Adapter {adapter} not fully placed, util={util}"
         
-def select_server(server_map, probability_sum, req):
+def select_server(server_map, probability_sum, req, adapter_groups=None, adapter_demand=None):
     """
     Selects a server for the given request based on the provided probability distribution.
     """
@@ -235,11 +236,29 @@ def select_server(server_map, probability_sum, req):
         chosen_server = available_servers[bisect.bisect_left(prob_thresholds, rand_prob)]
     except Exception as e:
         print(f"Error in bisecting {prob_thresholds} with rand_prob {rand_prob}, available_servers {available_servers}: {e}. Falling back to first in list if exists.")
+        print(server_map)
+        print(probability_sum)
+        print(adapter_groups)
+        print(adapter_demand)
         if available_servers:
             chosen_server = available_servers[0]
         else:
             raise Exception(f"No available servers for adapter {req.adapter_dir}")
     return chosen_server
+
+
+def flatten_dict_values(d):
+    vals = list(d.values())
+    if not vals:
+        return []
+
+    if all(isinstance(v, str) for v in vals):
+        return vals
+
+    if all(isinstance(v, list) for v in vals):
+        return list(chain.from_iterable(vals))
+
+    raise TypeError("Dictionary values are not uniform: mixture of int and list detected.")
 
 async def benchmark_system(
     backend: str,
@@ -257,6 +276,7 @@ async def benchmark_system(
     tasks: List[asyncio.Task] = []
     last_time = input_requests[0]
     step = 30
+    probability_sum = defaultdict(list) # adapter -> [prob of server 1, prob of server 1 + prob of server 2, ...]
     
     for req in input_requests:
         if req.req_time > last_time.req_time // 1 + step:
@@ -300,14 +320,15 @@ async def benchmark_system(
             
             total_instance_demand = sum(rank_instance_demand.values())
 
-            target_util = total_instance_demand / len(servers)
-            assert target_util <= 1, f"Target utilization exceeds 1, need more servers: {target_util}"
-
-            servers = sorted(list(set(server_map.values())))
+            flattened_server_map = flatten_dict_values(server_map)
+            servers = sorted(list(set(flattened_server_map)))
             adapter_groups = [[] for _ in servers]
             num_servers = len(servers)
             server_occupied_tps = [0] * num_servers
             server_max_rank = [0] * num_servers
+            
+            target_util = total_instance_demand / len(servers)
+            assert target_util <= 1, f"Target utilization exceeds 1, need more servers: {target_util}"
 
             with open("allocation_log.txt", "a") as f:
                 f.write("\n\n************************************")
@@ -401,7 +422,14 @@ async def benchmark_system(
                 # go through the servers with higher max rank and fit the fractional demand until target utilization
                 server_idx = 0
                 allocated_adapter = False
-                while expected_util > 1e-3 and server_idx < num_servers:
+                
+                if expected_util == 0:
+                    adapter_groups[server_idx].append([adapter_name, 1.0])
+                    server_max_rank[server_idx] = max(server_max_rank[server_idx], adapter_rank)
+                    allocated_adapter = True
+                    continue
+                
+                while expected_util > 1e-3 and server_idx < num_servers and not allocated_adapter:
                     if server_max_rank[server_idx] >= adapter_rank and server_util[server_idx] < target_util:
                         max_addable_util = min(target_util - server_util[server_idx], expected_util)
                         adapter_groups[server_idx].append([adapter_name, max_addable_util/_expected_util])
@@ -487,8 +515,6 @@ async def benchmark_system(
                         probability_sum[adapter].append(probability_sum[adapter][-1] + util if probability_sum[adapter] else util)
                     else:
                         server_map[adapter].append(server_rename_map[server])
-            print(server_map)
-            print(probability_sum)
             
             prev_alloc = adapter_groups.copy()
             prev_rank_assigned_instances = rank_assigned_instances.copy()
@@ -503,8 +529,20 @@ async def benchmark_system(
         # print(req)
 
         #* sample from the adapter groups based on the placement probabilities
-        chosen_server = select_server(server_map, probability_sum, req)
-            
+        chosen_server = None
+        if probability_sum:
+            # print("Sampling server based on placement probabilities", flush=True)
+            chosen_server = select_server(server_map, probability_sum, req, adapter_groups, adapter_demand)
+        else:
+            # print("Choosing first server always", flush=True)
+            if server_map[req.adapter_dir]:
+                if type(server_map[req.adapter_dir]) is list:
+                    chosen_server = server_map[req.adapter_dir][0]
+                else:
+                    chosen_server = server_map[req.adapter_dir]
+        
+        # print(f"Request {req.req_id} for adapter {req.adapter_dir} assigned to server {chosen_server} at time {req.req_time}", flush=True)
+        
         task = asyncio.create_task(
             send_request(
                 backend,
