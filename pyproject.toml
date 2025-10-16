@@ -1,0 +1,74 @@
+## Build configuration
+[build-system]
+requires = [
+	"setuptools>=69",  # modern setuptools for PEP 621 + editable
+	"wheel",
+	# Torch is needed only when actually building the CUDA extension; keep it out
+	# of the unconditional build requirements to avoid forcing a heavyweight
+	# download in isolated metadata builds. We will import torch lazily in
+	# setup.py (or during extension build). If the user needs the extension they
+	# should have torch pre-installed or install the extra: pip install .[torch]
+	"numpy>=1.21"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dancingmodel"
+version = "1.0.0"  # alternatively could be dynamic from SCM/tag
+description = "dancingmodel for inference LLM (S-LoRA)"
+readme = "S-LoRA/README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+authors = [
+	{name = "model toolchain", email = "test@test.com"}
+]
+classifiers = [
+	"Programming Language :: Python :: 3",
+	"Operating System :: POSIX :: Linux",
+]
+
+dependencies = [
+	"aiohttp",
+	"einops",
+	"fastapi",
+	"ninja",
+	"packaging",
+	"pyzmq",
+	"rpyc",
+	"safetensors",
+	"transformers",
+	"uvloop; platform_system == 'Linux'",  # uvloop only on Unix
+]
+
+[project.optional-dependencies]
+torch = [
+	# Users can pick their own CUDA build; leave version open.
+	"torch",
+	# "triton>=2.0.0"  # add if required explicitly
+]
+dev = [
+	"pytest",
+	"ruff",
+	"mypy",
+]
+bench = [
+	"pandas",
+	"matplotlib",
+]
+
+[tool.setuptools]
+packages = {find = {exclude = [
+	"build",
+	"include",
+	"csrc",
+	"test",
+	"dist",
+	"docs",
+	"benchmarks",
+	"dancingmodel.egg-info"
+]}}
+
+[tool.setuptools.package-data]
+# Include any data files (adjust as needed)
+"dancingmodel" = ["**/*.json", "**/*.txt"]
+
