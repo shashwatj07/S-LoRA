@@ -158,6 +158,8 @@ async def benchmark_baseline(
             )
         # print(req)
 
+        assert server_map[req.adapter_dir] is not None
+
         task = asyncio.create_task(
             send_request(
                 backend,
