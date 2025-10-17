@@ -22,7 +22,7 @@ import bisect
 from tqdm import tqdm
 from typing import List, Tuple
 from math import ceil
-from collections import defaultdict
+from collections import defaultdict, deque
 
 import aiohttp
 
@@ -178,13 +178,23 @@ async def benchmark_baseline(
     latency = await asyncio.gather(*tasks)
     return latency
 
+
+def ema_next(values: list, alpha: float = 0.5):
+    print(f"ema over {len(values)}")
+    assert values, "no values found when computing ema"
+    ema = values[-1]
+    for x in values[-2::-1]:
+        ema = alpha * x + (1 - alpha) * ema
+    return ema
+
+
 def compare_with_prev_alloc(
     adapter_groups,
     prev_adapter_groups,
     assigned_instances_per_rank,
     prev_assigned_instances_per_rank,
     adapter_to_tps=None,
-    jaccard_threshold=0.5
+    jaccard_threshold=0.5,
 ):
     """
     Compares the current and previous allocations to identify any changes in server assignments.
@@ -192,7 +202,7 @@ def compare_with_prev_alloc(
     adapter_groups: [(adapter_name, routing_probability),]
     """
     server_rename_map = {}  # {old_server: new_server}
-    
+
     for rank, prev_servers in prev_assigned_instances_per_rank.items():
         if rank in assigned_instances_per_rank:
             curr_servers = assigned_instances_per_rank[rank]
@@ -201,16 +211,31 @@ def compare_with_prev_alloc(
                     server_rename_map[old_server] = new_server
             else:
                 for prev_server in prev_servers:
-                    old_adapters = set(adapter for adapter, _ in prev_adapter_groups[prev_server])
+                    old_adapters = set(
+                        adapter for adapter, _ in prev_adapter_groups[prev_server]
+                    )
                     for curr_server in curr_servers:
-                        new_adapters = set(adapter for adapter, _ in adapter_groups[curr_server])
-                        intersection_adapters_sum_tps = sum(adapter_to_tps.get(adapter, 0) for adapter in old_adapters & new_adapters)
-                        union_adapters_sum_tps = sum(adapter_to_tps.get(adapter, 0) for adapter in old_adapters | new_adapters)
-                        if union_adapters_sum_tps > 0 and intersection_adapters_sum_tps / union_adapters_sum_tps > jaccard_threshold:
+                        new_adapters = set(
+                            adapter for adapter, _ in adapter_groups[curr_server]
+                        )
+                        intersection_adapters_sum_tps = sum(
+                            adapter_to_tps.get(adapter, 0)
+                            for adapter in old_adapters & new_adapters
+                        )
+                        union_adapters_sum_tps = sum(
+                            adapter_to_tps.get(adapter, 0)
+                            for adapter in old_adapters | new_adapters
+                        )
+                        if (
+                            union_adapters_sum_tps > 0
+                            and intersection_adapters_sum_tps / union_adapters_sum_tps
+                            > jaccard_threshold
+                        ):
                             server_rename_map[curr_server] = prev_server
                             break
-    
+
     return server_rename_map
+
 
 def ensure_all_placed(adapter_groups, epsilon: float = 1e-3):
     """
@@ -226,18 +251,30 @@ def ensure_all_placed(adapter_groups, epsilon: float = 1e-3):
                 utils[adapter] = util
 
     for adapter, util in utils.items():
-        assert abs(util - 1) < epsilon, f"Adapter {adapter} not fully placed, util={util}"
-        
-def select_server(server_map, probability_sum, req, adapter_groups=None, adapter_demand=None):
+        assert (
+            abs(util - 1) < epsilon
+        ), f"Adapter {adapter} not fully placed, util={util}"
+
+
+def select_server(
+    server_map, probability_sum, req, adapter_groups=None, adapter_demand=None
+):
     """
     Selects a server for the given request based on the provided probability distribution.
     """
-    available_servers, prob_thresholds = server_map[req.adapter_dir], probability_sum[req.adapter_dir]
+    available_servers, prob_thresholds = (
+        server_map[req.adapter_dir],
+        probability_sum[req.adapter_dir],
+    )
     rand_prob = random.random()
     try:
-        chosen_server = available_servers[bisect.bisect_left(prob_thresholds, rand_prob)]
+        chosen_server = available_servers[
+            bisect.bisect_left(prob_thresholds, rand_prob)
+        ]
     except Exception as e:
-        print(f"Error in bisecting {prob_thresholds} with rand_prob {rand_prob}, available_servers {available_servers}: {e}. Falling back to first in list if exists.")
+        print(
+            f"Error in bisecting {prob_thresholds} with rand_prob {rand_prob}, available_servers {available_servers}: {e}. Falling back to first in list if exists."
+        )
         print(server_map)
         print(probability_sum)
         print(adapter_groups)
@@ -260,7 +297,10 @@ def flatten_dict_values(d):
     if all(isinstance(v, list) for v in vals):
         return list(chain.from_iterable(vals))
 
-    raise TypeError("Dictionary values are not uniform: mixture of int and list detected.")
+    raise TypeError(
+        "Dictionary values are not uniform: mixture of str and list detected."
+    )
+
 
 async def benchmark_system(
     backend: str,
@@ -278,23 +318,42 @@ async def benchmark_system(
     tasks: List[asyncio.Task] = []
     last_time = input_requests[0]
     step = 30
-    probability_sum = defaultdict(list) # adapter -> [prob of server 1, prob of server 1 + prob of server 2, ...]
-    
+    probability_sum = defaultdict(
+        list
+    )  # adapter -> [prob of server 1, prob of server 1 + prob of server 2, ...]
+    ema_lookback_seconds = 300
+    ema_alpha = 0.5
+    adapter_window_history = defaultdict(
+        lambda: deque()
+    )  # adapter -> deque of (window end time, tps), with newest on right
+
     for req in input_requests:
         if req.req_time > last_time.req_time // 1 + step:
             demand_tps = {a: 0 for a in adapter_dirs}
             index = input_requests.index(last_time)
-            while input_requests[index].req_time < req.req_time:
+            window_end_time = req.req_time
+            while (
+                index < len(input_requests)
+                and input_requests[index].req_time < req.req_time
+            ):
                 # rank = int(re.search(r'rank-(\d+)', input_requests[index].adapter_dir).group(1))
+                r = input_requests[index]
                 demand_tps[input_requests[index].adapter_dir] = (
-                    demand_tps.get(input_requests[index].adapter_dir)
-                    + (
-                        input_requests[index].prompt_len
-                        + input_requests[index].output_len
-                    )
-                    / step
+                    demand_tps.get(r.adapter_dir) + (r.prompt_len + r.output_len) / step
                 )
                 index += 1
+            
+            for adapter, raw_tps in demand_tps.items():
+                history = adapter_window_history[adapter]
+                history.append((window_end_time, raw_tps))
+                
+                history_cutoff_time = window_end_time - ema_lookback_seconds
+                while history and history[0][0] < history_cutoff_time:
+                    history.popleft()
+                    
+                tps_values = [tps for _, tps in history]
+                demand_tps[adapter] = ema_next(tps_values, alpha=ema_alpha)
+            
             adapter_demand = []
             for adapter, tps in demand_tps.items():
                 rank = int(re.search(r"rank-(\d+)", adapter).group(1))
@@ -306,20 +365,26 @@ async def benchmark_system(
                 if rank not in rank_wise_demand:
                     rank_wise_demand[rank] = 0
                 rank_wise_demand[rank] += tps
-            
-            server_tps = {8: 2400, 16: 2100, 32: 1900, 64:1700, 128:1600} # operating point, fn of max rank, old NC24ads-hipri 8xA100 40GB
+
             # server_tps = {
-            #     8: 2725,
-            #     16: 2700,
-            #     32: 2675,
-            #     64: 2625,
-            #     128: 2525,
-            # }  # operating point, fn of max rank, 4xA100 80GB
-            
+            #     8: 2400,
+            #     16: 2100,
+            #     32: 1900,
+            #     64: 1700,
+            #     128: 1600,
+            # }  # operating point, fn of max rank, old NC24ads-hipri 8xA100 40GB
+            server_tps = {
+                8: 2725,
+                16: 2700,
+                32: 2675,
+                64: 2625,
+                128: 2525,
+            }  # operating point, fn of max rank, 4xA100 80GB
+
             rank_instance_demand = {}
             for rank, tps in rank_wise_demand.items():
                 rank_instance_demand[rank] = tps / server_tps[rank]
-            
+
             total_instance_demand = sum(rank_instance_demand.values())
 
             flattened_server_map = flatten_dict_values(server_map)
@@ -328,43 +393,72 @@ async def benchmark_system(
             num_servers = len(servers)
             server_occupied_tps = [0] * num_servers
             server_max_rank = [0] * num_servers
-            
+
             target_util = total_instance_demand / len(servers)
-            assert target_util <= 1, f"Target utilization exceeds 1, need more servers: {target_util}"
+            assert (
+                target_util <= 1
+            ), f"Target utilization exceeds 1, need more servers: {target_util}"
 
             with open("allocation_log.txt", "a") as f:
                 f.write("\n\n************************************")
-                f.write(f"step {step_idx} @ time {last_time.req_time} to {req.req_time}:")
-            
-            # * checking compatibility 
+                f.write(
+                    f"step {step_idx} @ time {last_time.req_time} to {req.req_time}:"
+                )
+
+            # * checking compatibility
             # TODO: this was the old tps based compatibility, can we remove?
-            # TODO: since we check compatibility with the rank instance budget now 
-            rank_instance_budget = [(rank, sum(tps for r, tps, _ in adapter_demand if r == rank) / rank_max_tps) for rank, rank_max_tps in server_tps.items()]
-            sorted_budgets = sorted(rank_instance_budget, key=lambda x: x[1], reverse=True)
-            assert sum(budget for _, budget in rank_instance_budget) <= num_servers, "Exceeded server budget"
+            # TODO: since we check compatibility with the rank instance budget now
+            rank_instance_budget = [
+                (
+                    rank,
+                    sum(tps for r, tps, _ in adapter_demand if r == rank)
+                    / rank_max_tps,
+                )
+                for rank, rank_max_tps in server_tps.items()
+            ]
+            sorted_budgets = sorted(
+                rank_instance_budget, key=lambda x: x[1], reverse=True
+            )
+            assert (
+                sum(budget for _, budget in rank_instance_budget) <= num_servers
+            ), "Exceeded server budget"
 
             # * rounding
-            rounded_budgets = [(budget, rank, round(budget/target_util))
-                           for rank, budget in sorted_budgets if round(budget/target_util) > 0]
-            rounded_budgets.sort(reverse=True, key=lambda x: (x[0]/x[2], x[1]))
-            zero_budgets = [(budget, rank, round(budget/target_util))
-                           for rank, budget in sorted_budgets if round(budget/target_util) == 0]
+            rounded_budgets = [
+                (budget, rank, round(budget / target_util))
+                for rank, budget in sorted_budgets
+                if round(budget / target_util) > 0
+            ]
+            rounded_budgets.sort(reverse=True, key=lambda x: (x[0] / x[2], x[1]))
+            zero_budgets = [
+                (budget, rank, round(budget / target_util))
+                for rank, budget in sorted_budgets
+                if round(budget / target_util) == 0
+            ]
             sum_rounded_off_budgets = sum(budget for _, _, budget in rounded_budgets)
             while sum_rounded_off_budgets < num_servers:
                 # print("Increasing instances")
                 first = rounded_budgets[0]
-                rounded_budgets = [(first[0], first[1], first[2]+1)] + rounded_budgets[1:].copy()
-                rounded_budgets.sort(reverse=True, key=lambda x: (x[0]/x[2], x[1]))
-                sum_rounded_off_budgets = sum(budget for _, _, budget in rounded_budgets)
+                rounded_budgets = [
+                    (first[0], first[1], first[2] + 1)
+                ] + rounded_budgets[1:].copy()
+                rounded_budgets.sort(reverse=True, key=lambda x: (x[0] / x[2], x[1]))
+                sum_rounded_off_budgets = sum(
+                    budget for _, _, budget in rounded_budgets
+                )
             rounded_budgets.sort(key=lambda x: x[1])
             sum_rounded_off_budgets = sum(budget for _, _, budget in rounded_budgets)
             while sum_rounded_off_budgets > num_servers:
                 # print("Decreasing instances")
                 first = rounded_budgets[0]
                 assert first[2] > 0, "Cannot reduce instances further"
-                rounded_budgets = [(first[0], first[1], first[2] - 1)] + rounded_budgets[1:].copy()
+                rounded_budgets = [
+                    (first[0], first[1], first[2] - 1)
+                ] + rounded_budgets[1:].copy()
                 rounded_budgets.sort(key=lambda x: x[1])
-                sum_rounded_off_budgets = sum(budget for _, _, budget in rounded_budgets)
+                sum_rounded_off_budgets = sum(
+                    budget for _, _, budget in rounded_budgets
+                )
 
             # * balanced allocation within assigned instances
             ranks_with_assigned_instances = [(x[1], x[2]) for x in rounded_budgets]
@@ -374,48 +468,80 @@ async def benchmark_system(
             server_util = [0] * num_servers
             leftovers = []
             for rank in ranks_with_zero_instances:
-                leftovers.extend([(idx, adapter, 1.0) for idx, adapter in enumerate(adapter_demand) if adapter[0] == rank])
+                leftovers.extend(
+                    [
+                        (idx, adapter, 1.0)
+                        for idx, adapter in enumerate(adapter_demand)
+                        if adapter[0] == rank
+                    ]
+                )
             for rank, budget in ranks_with_assigned_instances:
                 # assign adapters of rank to num_instances greedily
                 # maybe sort in descending tps order and assign fractionally from the left
 
                 # get all adapters of this rank
-                adapters_of_rank = [(idx, adapter) for idx, adapter in enumerate(adapter_demand) if adapter[0] == rank]
-                adapters_of_rank.sort(reverse=True, key=lambda x: x[1][1])  # sort by tps descending
+                adapters_of_rank = [
+                    (idx, adapter)
+                    for idx, adapter in enumerate(adapter_demand)
+                    if adapter[0] == rank
+                ]
+                adapters_of_rank.sort(
+                    reverse=True, key=lambda x: x[1][1]
+                )  # sort by tps descending
                 servers_used = 0
-                rank_assigned_instances[rank] = list(range(last_used_server, last_used_server + budget))
+                rank_assigned_instances[rank] = list(
+                    range(last_used_server, last_used_server + budget)
+                )
                 for adapter_idx, adapter in adapters_of_rank:
                     tps, adapter_name = adapter[1], adapter[2]
                     expected_util = tps / server_tps[rank]
                     _expected_util = expected_util
                     while expected_util > 1e-3 and servers_used < budget:
-                        #assign as much as possible to this server
+                        # assign as much as possible to this server
                         if servers_used >= budget:
-                            raise Exception(f"Ran out of servers: used {servers_used}, budget {budget} at adapter {adapter} at index {adapter_idx}")
+                            raise Exception(
+                                f"Ran out of servers: used {servers_used}, budget {budget} at adapter {adapter} at index {adapter_idx}"
+                            )
                         server_idx = last_used_server + servers_used
                         # assign to this server
-                        max_addable_util = min(target_util - server_util[server_idx], expected_util)
-                        adapter_groups[server_idx].append([adapter_name, max_addable_util/_expected_util])
-                        server_occupied_tps[server_idx] += max_addable_util * server_tps[rank]
-                        
+                        max_addable_util = min(
+                            target_util - server_util[server_idx], expected_util
+                        )
+                        adapter_groups[server_idx].append(
+                            [adapter_name, max_addable_util / _expected_util]
+                        )
+                        server_occupied_tps[server_idx] += (
+                            max_addable_util * server_tps[rank]
+                        )
+
                         # adapters_placed[adapter_idx] = True
-                        server_max_rank[server_idx] = max(server_max_rank[server_idx], rank)
+                        server_max_rank[server_idx] = max(
+                            server_max_rank[server_idx], rank
+                        )
                         server_util[server_idx] += max_addable_util
                         if server_util[server_idx] >= target_util:
                             servers_used += 1
                         expected_util -= max_addable_util
                     if expected_util > 1e-3:
-                        leftovers.append((adapter_idx, adapter, expected_util/_expected_util))
+                        leftovers.append(
+                            (adapter_idx, adapter, expected_util / _expected_util)
+                        )
                 last_used_server += budget
 
             # * leftovers
             space_left = (target_util * num_servers) - sum(server_util)
             demand_left = 0
             for _, adapter_tuple, util_fraction in leftovers:
-                demand_left += (adapter_tuple[1] * util_fraction)/server_tps[adapter_tuple[0]]
-            assert demand_left - space_left < 1e-3, "Leftover demand does not fit in remaining space"
-            
-            leftovers.sort(reverse=True, key=lambda x: (x[1][1]))  # sort by tps descending
+                demand_left += (adapter_tuple[1] * util_fraction) / server_tps[
+                    adapter_tuple[0]
+                ]
+            assert (
+                demand_left - space_left < 1e-3
+            ), "Leftover demand does not fit in remaining space"
+
+            leftovers.sort(
+                reverse=True, key=lambda x: (x[1][1])
+            )  # sort by tps descending
             for _, adapter_tuple, util_fraction in leftovers:
                 adapter_rank, adapter_demand_tps, adapter_name = adapter_tuple
                 _expected_util = adapter_demand_tps / server_tps[adapter_rank]
@@ -424,19 +550,36 @@ async def benchmark_system(
                 # go through the servers with higher max rank and fit the fractional demand until target utilization
                 server_idx = 0
                 allocated_adapter = False
-                
+
                 if expected_util == 0:
                     adapter_groups[server_idx].append([adapter_name, 1.0])
-                    server_max_rank[server_idx] = max(server_max_rank[server_idx], adapter_rank)
+                    server_max_rank[server_idx] = max(
+                        server_max_rank[server_idx], adapter_rank
+                    )
                     allocated_adapter = True
                     continue
-                
-                while expected_util > 1e-3 and server_idx < num_servers and not allocated_adapter:
-                    if server_max_rank[server_idx] >= adapter_rank and server_util[server_idx] < target_util:
-                        max_addable_util = min(target_util - server_util[server_idx], expected_util)
-                        adapter_groups[server_idx].append([adapter_name, max_addable_util/_expected_util])
-                        server_occupied_tps[server_idx] += max_addable_util * server_tps[adapter_rank]
-                        server_max_rank[server_idx] = max(server_max_rank[server_idx], adapter_rank)
+
+                while (
+                    expected_util > 1e-3
+                    and server_idx < num_servers
+                    and not allocated_adapter
+                ):
+                    if (
+                        server_max_rank[server_idx] >= adapter_rank
+                        and server_util[server_idx] < target_util
+                    ):
+                        max_addable_util = min(
+                            target_util - server_util[server_idx], expected_util
+                        )
+                        adapter_groups[server_idx].append(
+                            [adapter_name, max_addable_util / _expected_util]
+                        )
+                        server_occupied_tps[server_idx] += (
+                            max_addable_util * server_tps[adapter_rank]
+                        )
+                        server_max_rank[server_idx] = max(
+                            server_max_rank[server_idx], adapter_rank
+                        )
                         server_util[server_idx] += max_addable_util
                         expected_util -= max_addable_util
                     server_idx += 1
@@ -450,17 +593,26 @@ async def benchmark_system(
                     # need to colocate with a lower rank
                     while expected_util > 1e-3 and server_idx < num_servers:
                         if server_util[server_idx] < target_util:
-                            max_addable_util = min(target_util - server_util[server_idx], expected_util)
-                            adapter_groups[server_idx].append([adapter_name, max_addable_util/_expected_util])
-                            server_occupied_tps[server_idx] += max_addable_util * server_tps[adapter_rank]
-                            server_max_rank[server_idx] = max(server_max_rank[server_idx], adapter_rank)
+                            max_addable_util = min(
+                                target_util - server_util[server_idx], expected_util
+                            )
+                            adapter_groups[server_idx].append(
+                                [adapter_name, max_addable_util / _expected_util]
+                            )
+                            server_occupied_tps[server_idx] += (
+                                max_addable_util * server_tps[adapter_rank]
+                            )
+                            server_max_rank[server_idx] = max(
+                                server_max_rank[server_idx], adapter_rank
+                            )
                             server_util[server_idx] += max_addable_util
                             expected_util -= max_addable_util
                         server_idx += 1
 
                 if expected_util > 1e-3:
-                    raise Exception(f"Could not allocate adapter {adapter_name} with rank {adapter_rank} and tps {adapter_demand_tps}, leftover util {expected_util}")
-
+                    raise Exception(
+                        f"Could not allocate adapter {adapter_name} with rank {adapter_rank} and tps {adapter_demand_tps}, leftover util {expected_util}"
+                    )
 
             print(adapter_groups)
             with open("allocation_log.txt", "a") as f:
@@ -475,18 +627,16 @@ async def benchmark_system(
                     f.write(
                         f"  Server {servers[i]} max tps: {server_tps.get(server_max_rank[i], 0)}\n"
                     )
-                    f.write(
-                        f"  Server {servers[i]} util: {server_util[i]}\n"
-                    )
-                    f.write(
-                        f"  Server {servers[i]} max rank: {server_max_rank[i]}\n"
-                    )
+                    f.write(f"  Server {servers[i]} util: {server_util[i]}\n")
+                    f.write(f"  Server {servers[i]} max rank: {server_max_rank[i]}\n")
                 f.write("************************************\n\n")
-                
+
             ensure_all_placed(adapter_groups)
-            print(f"All adapters placed successfully for step {step_idx} from time {last_time.req_time} to {req.req_time}")
-            
-            #* compare with last iteration
+            print(
+                f"All adapters placed successfully for step {step_idx} from time {last_time.req_time} to {req.req_time}"
+            )
+
+            # * compare with last iteration
             server_rename_map = None
             if prev_alloc is not None and prev_rank_assigned_instances is not None:
                 adapter_to_tps = {adapter: tps for _, tps, adapter in adapter_demand}
@@ -498,26 +648,42 @@ async def benchmark_system(
                     adapter_to_tps=adapter_to_tps,
                 )
                 with open("allocation_log.txt", "a") as f:
-                    f.write(f"Prev rank assigned instances (step {step_idx - 1}): {prev_rank_assigned_instances}\n")
-                    f.write(f"Curr rank assigned instances (step {step_idx}): {rank_assigned_instances}\n")
+                    f.write(
+                        f"Prev rank assigned instances (step {step_idx - 1}): {prev_rank_assigned_instances}\n"
+                    )
+                    f.write(
+                        f"Curr rank assigned instances (step {step_idx}): {rank_assigned_instances}\n"
+                    )
                 if server_rename_map:
                     print("Server renames detected:", server_rename_map)
                     with open("allocation_log.txt", "a") as f:
                         f.write(f"Server renames detected: {server_rename_map}\n")
                     if debug:
-                        print(f"Prev rank assigned instances (step {step_idx - 1}):", prev_rank_assigned_instances)
-                        print(f"Curr rank assigned instances (step {step_idx}):", rank_assigned_instances)
+                        print(
+                            f"Prev rank assigned instances (step {step_idx - 1}):",
+                            prev_rank_assigned_instances,
+                        )
+                        print(
+                            f"Curr rank assigned instances (step {step_idx}):",
+                            rank_assigned_instances,
+                        )
 
-            server_map = defaultdict(list) # adapter -> [server1, server2, ...]
-            probability_sum = defaultdict(list) # adapter -> [prob of server 1, prob of server 1 + prob of server 2, ...]
+            server_map = defaultdict(list)  # adapter -> [server1, server2, ...]
+            probability_sum = defaultdict(
+                list
+            )  # adapter -> [prob of server 1, prob of server 1 + prob of server 2, ...]
             for i, server in enumerate(servers):
                 for adapter, util in adapter_groups[i]:
                     if not server_rename_map or server not in server_rename_map.keys():
                         server_map[adapter].append(server)
-                        probability_sum[adapter].append(probability_sum[adapter][-1] + util if probability_sum[adapter] else util)
+                        probability_sum[adapter].append(
+                            probability_sum[adapter][-1] + util
+                            if probability_sum[adapter]
+                            else util
+                        )
                     else:
                         server_map[adapter].append(server_rename_map[server])
-            
+
             prev_alloc = adapter_groups.copy()
             prev_rank_assigned_instances = rank_assigned_instances.copy()
             step_idx += 1
@@ -530,11 +696,13 @@ async def benchmark_system(
             )
         # print(req)
 
-        #* sample from the adapter groups based on the placement probabilities
+        # * sample from the adapter groups based on the placement probabilities
         chosen_server = None
         if probability_sum:
             # print("Sampling server based on placement probabilities", flush=True)
-            chosen_server = select_server(server_map, probability_sum, req, adapter_groups, adapter_demand)
+            chosen_server = select_server(
+                server_map, probability_sum, req, adapter_groups, adapter_demand
+            )
         else:
             # print("Choosing first server always", flush=True)
             if server_map[req.adapter_dir]:
@@ -542,9 +710,9 @@ async def benchmark_system(
                     chosen_server = server_map[req.adapter_dir][0]
                 else:
                     chosen_server = server_map[req.adapter_dir]
-        
+
         # print(f"Request {req.req_id} for adapter {req.adapter_dir} assigned to server {chosen_server} at time {req.req_time}", flush=True)
-        
+
         task = asyncio.create_task(
             send_request(
                 backend,
@@ -664,7 +832,7 @@ async def benchmark_system(
 #                                 server_max_rank[least_occupied_server] = max(server_max_rank[least_occupied_server], rank)
 #                                 heapq.heappush(server_heap, (server_occupied_tps[least_occupied_server], least_occupied_server))
 #                                 break
-                    
+
 #                 current_server += num_assigned_instances
 
 #             # * leftovers
