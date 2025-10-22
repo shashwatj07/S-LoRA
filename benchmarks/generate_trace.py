@@ -57,7 +57,7 @@ def main():
     parser.add_argument("--distribution", "-d", type=str, default="pareto", help="Popularity distribution of adapters")
     parser.add_argument("--arrival-pattern", "-a", type=str, default="uniform", help="Arrival pattern of requests")
     parser.add_argument("--burst-size", type=int, default=10, help="Burst size if bursty arrival pattern is chosen")
-    parser.add_argument("--burst-interval", type=float, default=5, help="Burst interval if bursty arrival pattern is chosen")
+    parser.add_argument("--burst-interval", type=float, default=2, help="Burst interval if bursty arrival pattern is chosen")
     parser.add_argument("--rps", type=float, help="Total requests per second")
     parser.add_argument("--time", "-t", type=int, default=5*60, help="Total time duration")
     
