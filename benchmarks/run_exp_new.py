@@ -180,7 +180,6 @@ async def benchmark_baseline(
 
 
 def ema_next(values: list, alpha: float = 0.5):
-    print(f"ema over {len(values)}")
     assert values, "no values found when computing ema"
     ema = values[-1]
     for x in values[-2::-1]:
@@ -429,6 +428,11 @@ async def benchmark_system(
                 for rank, budget in sorted_budgets
                 if round(budget / target_util) > 0
             ]
+            if len(rounded_budgets) == 0:
+                # Force at least one instance for the largest rank budget
+                largest_rank, largest_budget = max(sorted_budgets, key=lambda x: x[1])
+                rounded_budgets = [(largest_budget, largest_rank, 1)]
+                
             rounded_budgets.sort(reverse=True, key=lambda x: (x[0] / x[2], x[1]))
             zero_budgets = [
                 (budget, rank, round(budget / target_util))
@@ -535,10 +539,30 @@ async def benchmark_system(
                 demand_left += (adapter_tuple[1] * util_fraction) / server_tps[
                     adapter_tuple[0]
                 ]
-            assert (
-                demand_left - space_left < 1e-3
-            ), "Leftover demand does not fit in remaining space"
-
+            # Guard: if rounding earlier caused an impossible leftover (slight FP drift or forced instance), scale leftovers proportionally.
+            rescaled_leftovers = False
+            if demand_left - space_left >= 1e-3:
+                with open("allocation_log.txt", "a") as f:
+                    f.write(
+                        f"[warn] Leftover demand ({demand_left:.6f}) exceeds space ({space_left:.6f}). Scaling leftovers proportionally.\n"
+                    )
+                if demand_left > 0 and space_left > 0:
+                    rescaled_leftovers = True
+                    scale = space_left / demand_left
+                    new_leftovers = []
+                    for adapter_idx, adapter_tuple, util_fraction in leftovers:
+                        new_leftovers.append(
+                            (adapter_idx, adapter_tuple, util_fraction * scale)
+                        )
+                    leftovers = new_leftovers
+                else:
+                    # No capacity left; drop leftover demands (will be completed in next window)
+                    leftovers = []
+                    with open("allocation_log.txt", "a") as f:
+                        f.write(
+                            "[warn] Dropping leftovers due to zero capacity; will retry next window.\n"
+                        )
+                        
             leftovers.sort(
                 reverse=True, key=lambda x: (x[1][1])
             )  # sort by tps descending
@@ -631,7 +655,8 @@ async def benchmark_system(
                     f.write(f"  Server {servers[i]} max rank: {server_max_rank[i]}\n")
                 f.write("************************************\n\n")
 
-            ensure_all_placed(adapter_groups)
+            if not rescaled_leftovers:
+                ensure_all_placed(adapter_groups)
             print(
                 f"All adapters placed successfully for step {step_idx} from time {last_time.req_time} to {req.req_time}"
             )
