@@ -309,6 +309,7 @@ async def benchmark_system(
     input_requests: List[Tuple[str, str, str, int, int]],
     output,
     debug=False,
+    ema_population_time: int = 300,
 ) -> None:
     start = time.time()
     step_idx = 0
@@ -326,6 +327,8 @@ async def benchmark_system(
     adapter_window_history = defaultdict(
         lambda: deque()
     )  # adapter -> deque of (window end time, tps), with newest on right
+    skipped_ema_requests_count = 0
+    executed_req_times = []
 
     for req in input_requests:
         if req.req_time > last_time.req_time // 1 + step:
@@ -342,18 +345,18 @@ async def benchmark_system(
                     demand_tps.get(r.adapter_dir) + (r.prompt_len + r.output_len) / step
                 )
                 index += 1
-            
+
             for adapter, raw_tps in demand_tps.items():
                 history = adapter_window_history[adapter]
                 history.append((window_end_time, raw_tps))
-                
+
                 history_cutoff_time = window_end_time - ema_lookback_seconds
                 while history and history[0][0] < history_cutoff_time:
                     history.popleft()
-                    
+
                 tps_values = [tps for _, tps in history]
                 demand_tps[adapter] = ema_next(tps_values, alpha=ema_alpha)
-            
+
             adapter_demand = []
             for adapter, tps in demand_tps.items():
                 rank = int(re.search(r"rank-(\d+)", adapter).group(1))
@@ -366,20 +369,20 @@ async def benchmark_system(
                     rank_wise_demand[rank] = 0
                 rank_wise_demand[rank] += tps
 
-            # server_tps = {
-            #     8: 2400,
-            #     16: 2100,
-            #     32: 1900,
-            #     64: 1700,
-            #     128: 1600,
-            # }  # operating point, fn of max rank, old NC24ads-hipri 8xA100 40GB
             server_tps = {
-                8: 2725,
-                16: 2700,
-                32: 2675,
-                64: 2625,
-                128: 2525,
-            }  # operating point, fn of max rank, 4xA100 80GB
+                8: 5500,
+                16: 5400,
+                32: 5225,
+                64: 5000,
+                128: 4500,
+            }  # operating point, fn of max rank, ND96asrv4-WUS3-hipri 8xA100 40GB
+            # server_tps = {
+            #     8: 2725,
+            #     16: 2700,
+            #     32: 2675,
+            #     64: 2625,
+            #     128: 2525,
+            # }  # operating point, fn of max rank, 4xA100 80GB
 
             rank_instance_demand = {}
             for rank, tps in rank_wise_demand.items():
@@ -688,6 +691,16 @@ async def benchmark_system(
             prev_rank_assigned_instances = rank_assigned_instances.copy()
             step_idx += 1
             last_time = req
+
+        # dont send the requests during ema warmup time
+        if req.req_time < ema_population_time:
+            skipped_ema_requests_count += 1
+            if debug:
+                print(
+                    f"[EMA populate only] Skipping send for req {req.req_id} at trace time {req.req_time:.2f}s"
+                )
+            continue
+
         await asyncio.sleep(start + req.req_time - time.time())
         if debug:
             print(
@@ -713,6 +726,7 @@ async def benchmark_system(
 
         # print(f"Request {req.req_id} for adapter {req.adapter_dir} assigned to server {chosen_server} at time {req.req_time}", flush=True)
 
+        executed_req_times.append(req.req_time)
         task = asyncio.create_task(
             send_request(
                 backend,
@@ -729,189 +743,7 @@ async def benchmark_system(
         )
         tasks.append(task)
     latency = await asyncio.gather(*tasks)
-    return latency
-
-
-# async def benchmark_system(
-#     backend: str,
-#     server_map: str,
-#     adapter_dirs,
-#     input_requests: List[Tuple[str, str, str, int, int]],
-#     output,
-#     debug=False,
-# ) -> None:
-#     start = time.time()
-#     tasks: List[asyncio.Task] = []
-#     last_time = input_requests[0]
-#     step = 30
-#     for req in input_requests:
-#         if req.req_time > last_time.req_time // 1 + step:
-#             demand_tps = {a: 0 for a in adapter_dirs}
-#             index = input_requests.index(last_time)
-#             while input_requests[index].req_time < req.req_time:
-#                 # rank = int(re.search(r'rank-(\d+)', input_requests[index].adapter_dir).group(1))
-#                 demand_tps[input_requests[index].adapter_dir] = (
-#                     demand_tps.get(input_requests[index].adapter_dir)
-#                     + (
-#                         input_requests[index].prompt_len
-#                         + input_requests[index].output_len
-#                     )
-#                     / step
-#                 )
-#                 index += 1
-#             adapter_demand = []
-#             for adapter, tps in demand_tps.items():
-#                 rank = int(re.search(r"rank-(\d+)", adapter).group(1))
-#                 adapter_demand.append((rank, tps, adapter))  # tps here is expected tps
-#             adapter_demand.sort(reverse=True)
-
-#             # server_tps = {8: 2400, 16: 2100, 32: 1900, 64:1700, 128:1600} # operating point, fn of max rank, old NC24ads-hipri 8xA100 40GB
-#             server_tps = {
-#                 8: 2725,
-#                 16: 2700,
-#                 32: 2675,
-#                 64: 2625,
-#                 128: 2525,
-#             }  # operating point, fn of max rank, 4xA100 80GB
-
-#             servers = sorted(list(set(server_map.values())))
-#             adapter_groups = [[] for _ in servers]
-#             num_servers = len(servers)
-#             server_occupied_tps = [0] * num_servers
-#             server_max_rank = [0] * num_servers
-#             adapters_placed = [False] * len(adapter_demand)
-
-#             def is_compatible(
-#                 group_idx,
-#                 tuple,
-#                 server_max_rank=server_max_rank,
-#                 server_occupied_tps=server_occupied_tps,
-#                 scale=1,
-#             ):
-#                 """
-#                 Check if the given adapter tuple can fit within the group
-#                 An adapter can fit if it is within the tps limit
-#                 The tps limit depends on the max rank of the allocated adapters to this server
-#                 """
-#                 rank, tps, _ = tuple
-#                 max_rank = max(rank, server_max_rank[group_idx])
-#                 tps = server_occupied_tps[group_idx] + tuple[1]
-#                 return tps <= (server_tps[max_rank] * scale)
-
-#             # * checking compatibility
-#             rank_instance_budget = [(rank, sum(tps for r, tps, _ in adapter_demand if r == rank) / rank_max_tps) for rank, rank_max_tps in server_tps.items()]
-#             sorted_budgets = sorted(rank_instance_budget, key=lambda x: x[1], reverse=True)
-#             assert sum(budget for _, budget in rank_instance_budget) <= num_servers, "Exceeded server budget"
-
-#             # * rounding
-#             rounded_budgets = [(rank, round(budget)) for rank, budget in sorted_budgets]
-#             sum_rounded_off_budgets = sum(budget for _, budget in rounded_budgets)
-#             if sum_rounded_off_budgets < num_servers:
-#                 idx = 0
-#                 while sum_rounded_off_budgets < num_servers and idx < len(rounded_budgets):
-#                     rounded_budgets[idx] = (rounded_budgets[idx][0], ceil(sorted_budgets[idx][1]))
-#                     idx += 1
-#                     sum_rounded_off_budgets = sum(budget for _, budget in rounded_budgets)
-
-#             # * balanced allocation within assigned instances
-#             adapters_with_assigned_instances = [x for x in rounded_budgets if x[1] > 0]
-#             current_server = 0
-#             for rank, num_assigned_instances in adapters_with_assigned_instances:
-#                 l = current_server
-#                 r = current_server + num_assigned_instances
-#                 server_heap = [(server_occupied_tps[i], i) for i in range(l, r)]
-#                 heapq.heapify(server_heap)
-#                 for adapter_idx, adapter in enumerate(adapter_demand):
-#                     if adapter[0] == rank:
-#                         while server_heap:
-#                             occupancy, least_occupied_server = heapq.heappop(server_heap)
-#                             if is_compatible(least_occupied_server, adapter):
-#                                 adapter_groups[least_occupied_server].append(adapter)
-#                                 server_occupied_tps[least_occupied_server] += adapter[1]
-#                                 adapters_placed[adapter_idx] = True
-#                                 server_max_rank[least_occupied_server] = max(server_max_rank[least_occupied_server], rank)
-#                                 heapq.heappush(server_heap, (server_occupied_tps[least_occupied_server], least_occupied_server))
-#                                 break
-
-#                 current_server += num_assigned_instances
-
-#             # * leftovers
-#             for adapter_idx, adapter in enumerate(adapter_demand):
-#                 if not adapters_placed[adapter_idx]:
-#                     least_occupied_server = min(
-#                         (i for i in range(num_servers) if server_max_rank[i] >= adapter[0]),
-#                         key=lambda x: server_occupied_tps[x],
-#                         default=None
-#                     )
-#                     if least_occupied_server is not None and is_compatible(least_occupied_server, adapter):
-#                         adapter_groups[least_occupied_server].append(adapter)
-#                         server_occupied_tps[least_occupied_server] += adapter[1]
-#                         adapters_placed[adapter_idx] = True
-#                         continue
-
-#                     # we could not find a server with rank >= this adapters rank
-#                     # need to colocate with a lower rank
-#                     # TODO: better logic here - search through the closest ranks first and stop if we can fit
-#                     new_least_occupied_server = min(range(num_servers), key=lambda x: server_occupied_tps[x])
-#                     if is_compatible(new_least_occupied_server, adapter):
-#                         with open("allocation_log.txt", "a") as f:
-#                             f.write(
-#                                 f"{last_time} Adapter {adapter[2]} with rank {adapter[0]}, tps {adapter[1]} could not be placed in a server with rank >= {adapter[0]}, placing in server {servers[new_least_occupied_server]} with max rank {server_max_rank[new_least_occupied_server]}\n"
-#                             )
-#                         adapter_groups[new_least_occupied_server].append(adapter)
-#                         server_occupied_tps[new_least_occupied_server] += adapter[1]
-#                         adapters_placed[adapter_idx] = True
-#                         server_max_rank[new_least_occupied_server] = max(server_max_rank[new_least_occupied_server], adapter[0])
-
-
-#             print(adapter_groups)
-#             with open("allocation_log.txt", "a") as f:
-#                 f.write(f"\n{last_time} Adapter groups:\n")
-#                 for i, group in enumerate(adapter_groups):
-#                     f.write(
-#                         f"  Server {servers[i]}: {[(adapter, tps) for _, tps, adapter in group]}\n"
-#                     )
-#                     f.write(
-#                         f"  Server {servers[i]} total tps: {server_occupied_tps[i]}\n"
-#                     )
-#                     f.write(
-#                         f"  Server {servers[i]} max tps: {[server_tps[server_max_rank[i]] for i in range(num_servers)]}\n"
-#                     )
-#                     f.write(
-#                         f"  Server {servers[i]} max rank: {server_max_rank[i]}\n"
-#                     )
-
-#             server_map = {}
-#             for i, server in enumerate(servers):
-#                 for _, _, adapter in adapter_groups[i]:
-#                     server_map[adapter] = server
-#             print(server_map)
-#             last_time = req
-#         await asyncio.sleep(start + req.req_time - time.time())
-#         if debug:
-#             print(
-#                 f"{req.req_id} {req.req_time:.5f} wait {start + req.req_time - time.time():.5f} "
-#                 f"{req.adapter_dir}"
-#             )
-#         # print(req)
-
-#         task = asyncio.create_task(
-#             send_request(
-#                 backend,
-#                 server_map[req.adapter_dir],
-#                 req.req_id,
-#                 req.model_dir,
-#                 req.adapter_dir,
-#                 req.prompt,
-#                 req.prompt_len,
-#                 req.output_len,
-#                 output,
-#                 debug,
-#             )
-#         )
-#         tasks.append(task)
-#     latency = await asyncio.gather(*tasks)
-#     return latency
+    return latency, skipped_ema_requests_count, executed_req_times
 
 
 def get_adapter_dirs(num_adapters, adapter_dirs, backend=None):
@@ -929,27 +761,49 @@ def get_adapter_dirs(num_adapters, adapter_dirs, backend=None):
 
 
 def get_res_stats(
-    per_req_latency, benchmark_time, backend, warmup_time=0, warmup_num=0
+    per_req_latency,
+    benchmark_time,
+    backend,
+    warmup_time=0,
+    warmup_num=0,
+    total_trace_time=None,
+    active_trace_time_after_ema=None,
 ):
-    # get throughput
+    num_executed_requests = len([x for x in per_req_latency if x[3] is not None])
     num_abort = len([i for i in per_req_latency if i[3] is None])
     per_req_latency = [i for i in per_req_latency if i[3] is not None]
-    throughput = len(per_req_latency) / benchmark_time
-    # print(per_req_latency)
-    # if backend == "dm":
-    #     peak_mem = get_peak_mem(server)
-    #     print(f"GPU peak memory (GB):", [[f"{x / GB:.2f}" for x in tpg] for tpg in peak_mem])
+
+    # throughput calculations
+    throughput = num_executed_requests / benchmark_time
+    if total_trace_time is None:
+        total_trace_time = benchmark_time
+    if active_trace_time_after_ema is None:
+        active_trace_time_after_ema = total_trace_time
+
+    logical_throughput_excl_ema = (
+        num_executed_requests / active_trace_time_after_ema
+        if active_trace_time_after_ema > 0
+        else 0
+    )
+
+    logical_throughput_excl_ema_and_warmup = (
+        (num_executed_requests - warmup_num)
+        / (active_trace_time_after_ema - warmup_time)
+        if active_trace_time_after_ema - warmup_time > 0
+        else 0
+    )
+
     print(f"Total time: {benchmark_time:.2f} s")
-    print(f"Non warmup time: {benchmark_time - warmup_time:.2f} s")
+    # print(f"Non warmup and ema time: {benchmark_time - warmup_time:.2f} s")
     print(f"Total requests: {len(per_req_latency)}")
-    print(f"Non warmup requests: {len(per_req_latency) - warmup_num}")
+    # print(f"Non warmup requests: {len(per_req_latency) - warmup_num}")
     print(f"Aborted Request: {num_abort}")
     print(f"Throughput: {throughput:.2f} requests/s")
 
-    strip_throughput = (len(per_req_latency) - warmup_num * 2) / (
-        benchmark_time - warmup_time * 2
-    )
-    print(f"Throughput strip: {strip_throughput:.2f} requests/s")
+    # strip_throughput = (len(per_req_latency) - warmup_num * 2) / (
+    #     benchmark_time - warmup_time * 2
+    # )
+    # print(f"Throughput strip: {strip_throughput:.2f} requests/s")
 
     # Exclude first warmup_num requests from further statistics
     percentiles = [10, 25, 50, 75, 90, 95, 99]
@@ -1012,7 +866,7 @@ def get_res_stats(
         "gpu_peak_mem": single_gpu_peak_mem,
         "num_abort": num_abort,
         "throughput": throughput,
-        "strip_throughput": strip_throughput,
+        "strip_throughput": logical_throughput_excl_ema_and_warmup,
         "stats": stats,
         "backend": backend,
     }
@@ -1053,6 +907,7 @@ def run_exp(
     debug=False,
     warmup_time: int = 60,
     warmup_num: int = 600,
+    ema_population_time: int = 300,
 ):
     # first generate your data using real_trace/clean_chat_data.py
     # base_model = BASE_MODEL[model_setting]
@@ -1075,6 +930,8 @@ def run_exp(
         avg_output_len,
     )
 
+    total_trace_time, active_trace_time_after_ema = 0, 0
+    skipped_ema_requests_count, executed_req_times = 0, []
     if debug:
         print("num requests:", len(requests))
         for req in requests[:4]:
@@ -1101,6 +958,11 @@ def run_exp(
         )
         benchmark_end_time = time.time()
         benchmark_time = benchmark_end_time - benchmark_start_time
+        executed_req_times = [r.req_time for r in requests]
+        total_trace_time = max(r.req_time for r in requests) - min(
+            r.req_time for r in requests
+        )
+        active_trace_time_after_ema = total_trace_time
     elif backend == "system" or backend == "contiguous":
         # benchmark
         adapters = []
@@ -1123,26 +985,53 @@ def run_exp(
 
         if backend == "system":
             benchmark_start_time = time.time()
-            per_req_latency = asyncio.run(
-                benchmark_system(
-                    backend, server_map, adapter_dirs, requests, output, debug
+            per_req_latency, skipped_ema_requests_count, executed_req_times = (
+                asyncio.run(
+                    benchmark_system(
+                        backend,
+                        server_map,
+                        adapter_dirs,
+                        requests,
+                        output,
+                        debug,
+                        ema_population_time,
+                    )
                 )
             )
             benchmark_end_time = time.time()
+            total_trace_time = max(req.req_time for req in requests) - min(
+                req.req_time for req in requests
+            )
+            active_trace_time_after_ema = max(0, total_trace_time - ema_population_time)
         elif backend == "contiguous":
             benchmark_start_time = time.time()
             per_req_latency = asyncio.run(
                 benchmark_baseline(backend, server_map, requests, output, debug)
             )
             benchmark_end_time = time.time()
+            executed_req_times = [r.req_time for r in requests]
+            total_trace_time = max(r.req_time for r in requests) - min(
+                r.req_time for r in requests
+            )
+            active_trace_time_after_ema = total_trace_time
         benchmark_time = benchmark_end_time - benchmark_start_time
+
+    effective_warmup_cutoff = (
+        ema_population_time + warmup_time if backend == "system" else warmup_time
+    )
+    warmup_exec_count = sum(
+        1 for t in executed_req_times if t < effective_warmup_cutoff
+    )
 
     res = get_res_stats(
         per_req_latency,
         benchmark_time,
         backend,
         warmup_time=warmup_time,
-        warmup_num=warmup_num,
+        warmup_num=warmup_exec_count,
+        skipped_ema_requests_count=skipped_ema_requests_count,
+        total_trace_time=total_trace_time,
+        active_trace_time_after_ema=active_trace_time_after_ema,
     )
 
     with open(output, "a") as f:
@@ -1183,6 +1072,12 @@ if __name__ == "__main__":
         type=int,
         default=600,
         help="Number of requests considered as warmup, excluded from stats (rps * warmup-time)",
+    )
+    parser.add_argument(
+        "--ema-population-time",
+        type=int,
+        default=300,
+        help="Number of seconds to only populate EMA without sending requests",
     )
     args = parser.parse_args()
 
