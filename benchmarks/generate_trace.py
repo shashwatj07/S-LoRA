@@ -41,6 +41,7 @@ def get_times(size, end_time, dist, burst_size, burst_interval):
     elif dist == "bursty":
         times = []
         current_time = 0
+        burst_size = int(size // (end_time / (burst_interval * 2)))
         while len(times) < size:
             burst_times = np.random.uniform(current_time, current_time + burst_interval, burst_size)
             times.extend(burst_times)
@@ -79,10 +80,10 @@ def main():
                 names.append(adapter_name)
     normalized_weights = get_weights(len(names), dist)
     num_samples = int(rps * time)
-    samples = random.choices(names, weights=normalized_weights, k=num_samples)
     times = get_times(num_samples, time, arrival_pattern, burst_size, burst_interval)
-    samples = random.choices(names, weights=normalized_weights, k=len(times))
-    df = pd.read_csv("/home/t-shajaiswal/AzurePublicDataset/AzureLLMInferenceTrace_conv_1week.csv")
+    num_samples = min(num_samples, len(times))
+    samples = random.choices(names, weights=normalized_weights, k=num_samples)
+    df = pd.read_csv("../AzureLLMInferenceTrace_conv_1week.csv")
     df = df[(df['ContextTokens'] <= 1024) & (df['GeneratedTokens'] <= 256)]
     df = df.sample(n=num_samples)
     # df['ContextTokens'] = 512
@@ -94,6 +95,8 @@ def main():
     column_order = ['req_id', 'model', 'adapter', 'ContextTokens', 'GeneratedTokens', 'timestamp']
     df = df[column_order]
     df.columns = ['req_id', 'model_dir', 'adapter_dir', 'prompt_len', 'output_len', 'req_time']
+    # df["prompt_len"] = 500
+    # df["output_len"] = 128
     os.makedirs(output_dir, exist_ok=True)
     df.to_csv(os.path.join(output_dir, f'{dist}_{arrival_pattern}_{rps}_{time}.csv'), index=False)
     
