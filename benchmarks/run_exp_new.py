@@ -562,7 +562,7 @@ async def benchmark_system(
                         f.write(
                             "[warn] Dropping leftovers due to zero capacity; will retry next window.\n"
                         )
-                        
+
             leftovers.sort(
                 reverse=True, key=lambda x: (x[1][1])
             )  # sort by tps descending
@@ -756,189 +756,6 @@ async def benchmark_system(
     latency = await asyncio.gather(*tasks)
     return latency
 
-
-# async def benchmark_system(
-#     backend: str,
-#     server_map: str,
-#     adapter_dirs,
-#     input_requests: List[Tuple[str, str, str, int, int]],
-#     output,
-#     debug=False,
-# ) -> None:
-#     start = time.time()
-#     tasks: List[asyncio.Task] = []
-#     last_time = input_requests[0]
-#     step = 30
-#     for req in input_requests:
-#         if req.req_time > last_time.req_time // 1 + step:
-#             demand_tps = {a: 0 for a in adapter_dirs}
-#             index = input_requests.index(last_time)
-#             while input_requests[index].req_time < req.req_time:
-#                 # rank = int(re.search(r'rank-(\d+)', input_requests[index].adapter_dir).group(1))
-#                 demand_tps[input_requests[index].adapter_dir] = (
-#                     demand_tps.get(input_requests[index].adapter_dir)
-#                     + (
-#                         input_requests[index].prompt_len
-#                         + input_requests[index].output_len
-#                     )
-#                     / step
-#                 )
-#                 index += 1
-#             adapter_demand = []
-#             for adapter, tps in demand_tps.items():
-#                 rank = int(re.search(r"rank-(\d+)", adapter).group(1))
-#                 adapter_demand.append((rank, tps, adapter))  # tps here is expected tps
-#             adapter_demand.sort(reverse=True)
-
-#             # server_tps = {8: 2400, 16: 2100, 32: 1900, 64:1700, 128:1600} # operating point, fn of max rank, old NC24ads-hipri 8xA100 40GB
-#             server_tps = {
-#                 8: 2725,
-#                 16: 2700,
-#                 32: 2675,
-#                 64: 2625,
-#                 128: 2525,
-#             }  # operating point, fn of max rank, 4xA100 80GB
-
-#             servers = sorted(list(set(server_map.values())))
-#             adapter_groups = [[] for _ in servers]
-#             num_servers = len(servers)
-#             server_occupied_tps = [0] * num_servers
-#             server_max_rank = [0] * num_servers
-#             adapters_placed = [False] * len(adapter_demand)
-
-#             def is_compatible(
-#                 group_idx,
-#                 tuple,
-#                 server_max_rank=server_max_rank,
-#                 server_occupied_tps=server_occupied_tps,
-#                 scale=1,
-#             ):
-#                 """
-#                 Check if the given adapter tuple can fit within the group
-#                 An adapter can fit if it is within the tps limit
-#                 The tps limit depends on the max rank of the allocated adapters to this server
-#                 """
-#                 rank, tps, _ = tuple
-#                 max_rank = max(rank, server_max_rank[group_idx])
-#                 tps = server_occupied_tps[group_idx] + tuple[1]
-#                 return tps <= (server_tps[max_rank] * scale)
-
-#             # * checking compatibility
-#             rank_instance_budget = [(rank, sum(tps for r, tps, _ in adapter_demand if r == rank) / rank_max_tps) for rank, rank_max_tps in server_tps.items()]
-#             sorted_budgets = sorted(rank_instance_budget, key=lambda x: x[1], reverse=True)
-#             assert sum(budget for _, budget in rank_instance_budget) <= num_servers, "Exceeded server budget"
-
-#             # * rounding
-#             rounded_budgets = [(rank, round(budget)) for rank, budget in sorted_budgets]
-#             sum_rounded_off_budgets = sum(budget for _, budget in rounded_budgets)
-#             if sum_rounded_off_budgets < num_servers:
-#                 idx = 0
-#                 while sum_rounded_off_budgets < num_servers and idx < len(rounded_budgets):
-#                     rounded_budgets[idx] = (rounded_budgets[idx][0], ceil(sorted_budgets[idx][1]))
-#                     idx += 1
-#                     sum_rounded_off_budgets = sum(budget for _, budget in rounded_budgets)
-
-#             # * balanced allocation within assigned instances
-#             adapters_with_assigned_instances = [x for x in rounded_budgets if x[1] > 0]
-#             current_server = 0
-#             for rank, num_assigned_instances in adapters_with_assigned_instances:
-#                 l = current_server
-#                 r = current_server + num_assigned_instances
-#                 server_heap = [(server_occupied_tps[i], i) for i in range(l, r)]
-#                 heapq.heapify(server_heap)
-#                 for adapter_idx, adapter in enumerate(adapter_demand):
-#                     if adapter[0] == rank:
-#                         while server_heap:
-#                             occupancy, least_occupied_server = heapq.heappop(server_heap)
-#                             if is_compatible(least_occupied_server, adapter):
-#                                 adapter_groups[least_occupied_server].append(adapter)
-#                                 server_occupied_tps[least_occupied_server] += adapter[1]
-#                                 adapters_placed[adapter_idx] = True
-#                                 server_max_rank[least_occupied_server] = max(server_max_rank[least_occupied_server], rank)
-#                                 heapq.heappush(server_heap, (server_occupied_tps[least_occupied_server], least_occupied_server))
-#                                 break
-
-#                 current_server += num_assigned_instances
-
-#             # * leftovers
-#             for adapter_idx, adapter in enumerate(adapter_demand):
-#                 if not adapters_placed[adapter_idx]:
-#                     least_occupied_server = min(
-#                         (i for i in range(num_servers) if server_max_rank[i] >= adapter[0]),
-#                         key=lambda x: server_occupied_tps[x],
-#                         default=None
-#                     )
-#                     if least_occupied_server is not None and is_compatible(least_occupied_server, adapter):
-#                         adapter_groups[least_occupied_server].append(adapter)
-#                         server_occupied_tps[least_occupied_server] += adapter[1]
-#                         adapters_placed[adapter_idx] = True
-#                         continue
-
-#                     # we could not find a server with rank >= this adapters rank
-#                     # need to colocate with a lower rank
-#                     # TODO: better logic here - search through the closest ranks first and stop if we can fit
-#                     new_least_occupied_server = min(range(num_servers), key=lambda x: server_occupied_tps[x])
-#                     if is_compatible(new_least_occupied_server, adapter):
-#                         with open("allocation_log.txt", "a") as f:
-#                             f.write(
-#                                 f"{last_time} Adapter {adapter[2]} with rank {adapter[0]}, tps {adapter[1]} could not be placed in a server with rank >= {adapter[0]}, placing in server {servers[new_least_occupied_server]} with max rank {server_max_rank[new_least_occupied_server]}\n"
-#                             )
-#                         adapter_groups[new_least_occupied_server].append(adapter)
-#                         server_occupied_tps[new_least_occupied_server] += adapter[1]
-#                         adapters_placed[adapter_idx] = True
-#                         server_max_rank[new_least_occupied_server] = max(server_max_rank[new_least_occupied_server], adapter[0])
-
-
-#             print(adapter_groups)
-#             with open("allocation_log.txt", "a") as f:
-#                 f.write(f"\n{last_time} Adapter groups:\n")
-#                 for i, group in enumerate(adapter_groups):
-#                     f.write(
-#                         f"  Server {servers[i]}: {[(adapter, tps) for _, tps, adapter in group]}\n"
-#                     )
-#                     f.write(
-#                         f"  Server {servers[i]} total tps: {server_occupied_tps[i]}\n"
-#                     )
-#                     f.write(
-#                         f"  Server {servers[i]} max tps: {[server_tps[server_max_rank[i]] for i in range(num_servers)]}\n"
-#                     )
-#                     f.write(
-#                         f"  Server {servers[i]} max rank: {server_max_rank[i]}\n"
-#                     )
-
-#             server_map = {}
-#             for i, server in enumerate(servers):
-#                 for _, _, adapter in adapter_groups[i]:
-#                     server_map[adapter] = server
-#             print(server_map)
-#             last_time = req
-#         await asyncio.sleep(start + req.req_time - time.time())
-#         if debug:
-#             print(
-#                 f"{req.req_id} {req.req_time:.5f} wait {start + req.req_time - time.time():.5f} "
-#                 f"{req.adapter_dir}"
-#             )
-#         # print(req)
-
-#         task = asyncio.create_task(
-#             send_request(
-#                 backend,
-#                 server_map[req.adapter_dir],
-#                 req.req_id,
-#                 req.model_dir,
-#                 req.adapter_dir,
-#                 req.prompt,
-#                 req.prompt_len,
-#                 req.output_len,
-#                 output,
-#                 debug,
-#             )
-#         )
-#         tasks.append(task)
-#     latency = await asyncio.gather(*tasks)
-#     return latency
-
-
 def get_adapter_dirs(num_adapters, adapter_dirs, backend=None):
     ret = []
     num_iter = num_adapters // len(adapter_dirs) + 1
@@ -971,8 +788,8 @@ def get_res_stats(
     print(f"Aborted Request: {num_abort}")
     print(f"Throughput: {throughput:.2f} requests/s")
 
-    strip_throughput = (len(per_req_latency) - warmup_num * 2) / (
-        benchmark_time - warmup_time * 2
+    strip_throughput = (len(per_req_latency) - warmup_num) / (
+        benchmark_time - warmup_time
     )
     print(f"Throughput strip: {strip_throughput:.2f} requests/s")
 
