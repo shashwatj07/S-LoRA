@@ -372,13 +372,20 @@ async def benchmark_system(
             #     64: 1700,
             #     128: 1600,
             # }  # operating point, fn of max rank, old NC24ads-hipri 8xA100 40GB
+            # server_tps = {
+            #     8: 2725,
+            #     16: 2700,
+            #     32: 2675,
+            #     64: 2625,
+            #     128: 2525,
+            # }  # operating point, fn of max rank, 4xA100 80GB
             server_tps = {
-                8: 2725,
-                16: 2700,
-                32: 2675,
-                64: 2625,
-                128: 2525,
-            }  # operating point, fn of max rank, 4xA100 80GB
+                8: 5500,
+                16: 5400,
+                32: 5250,
+                64: 5000,
+                128: 4500,
+            }  # operating point, fn of max rank, ND96asrv 8xA100 80GB
 
             rank_instance_demand = {}
             for rank, tps in rank_wise_demand.items():
@@ -788,8 +795,8 @@ def get_res_stats(
     print(f"Aborted Request: {num_abort}")
     print(f"Throughput: {throughput:.2f} requests/s")
 
-    strip_throughput = (len(per_req_latency) - warmup_num) / (
-        benchmark_time - warmup_time
+    strip_throughput = (len(per_req_latency) - warmup_num) / max(
+        1e-9, benchmark_time - warmup_time
     )
     print(f"Throughput strip: {strip_throughput:.2f} requests/s")
 
