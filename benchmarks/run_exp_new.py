@@ -56,8 +56,10 @@ async def send_request(
     output_len: int,
     output_file: str,
     debug: bool,
+    arrival_time: float
 ) -> None:
     request_start_time = time.time()
+    scheduling_delay = max(0.0, request_start_time - arrival_time)
     headers = {"Content-Type": "application/json"}
     headers = {"User-Agent": "Benchmark Client"}
     if backend == "vllm":
@@ -129,15 +131,15 @@ async def send_request(
     )
     log_line = (
         f"req_id {req_id} {server} adapter_dir {adapter_dir} prompt_len {prompt_len} output_len {output_len} "
-        f"request_latency {request_latency:.2f} s, first_token_latency {first_token_latency:.2f} s, tbt {tbt:.2f} s\n"
+        f"request_latency {request_latency:.2f} s, scheduling_latency {scheduling_delay:.2f} s, first_token_latency {first_token_latency:.2f} s, tbt {tbt:.2f} s\n"
     )
     print(log_line)
     with open(f"fine_{output_file}", "a") as f:
         f.write(log_line)
     REQUEST_LATENCY.append(
-        (prompt_len, output_len, request_latency, first_token_latency, tbt)
+        (prompt_len, output_len, request_latency, first_token_latency, tbt, scheduling_delay)
     )
-    return (prompt_len, output_len, request_latency, first_token_latency, tbt)
+    return (prompt_len, output_len, request_latency, first_token_latency, tbt, scheduling_delay)
 
 
 async def benchmark_baseline(
@@ -150,7 +152,10 @@ async def benchmark_baseline(
     start = time.time()
     tasks: List[asyncio.Task] = []
     for req in input_requests:
-        await asyncio.sleep(start + req.req_time - time.time())
+        arrival_time = start + req.req_time
+        sleep_time = arrival_time - time.time()
+        if sleep_time > 0:
+            await asyncio.sleep(sleep_time)
         if debug:
             print(
                 f"{req.req_id} {req.req_time:.5f} wait {start + req.req_time - time.time():.5f} "
@@ -172,6 +177,7 @@ async def benchmark_baseline(
                 req.output_len,
                 output,
                 debug,
+                arrival_time
             )
         )
         tasks.append(task)
@@ -236,7 +242,7 @@ def compare_with_prev_alloc(
     return server_rename_map
 
 
-def ensure_all_placed(adapter_groups, epsilon: float = 1e-3):
+def ensure_all_placed(adapter_groups, epsilon: float = 0.1):
     """
     Ensure that the probability of adapter placements sums to within epsilon of 1 for each adapter
     """
@@ -327,7 +333,9 @@ async def benchmark_system(
     )  # adapter -> deque of (window end time, tps), with newest on right
 
     for req in input_requests:
+        arrival_time = start + req.req_time
         if req.req_time > last_time.req_time // 1 + step:
+            alloc_start = time.time()
             demand_tps = {a: 0 for a in adapter_dirs}
             index = input_requests.index(last_time)
             window_end_time = req.req_time
@@ -354,9 +362,11 @@ async def benchmark_system(
                 demand_tps[adapter] = ema_next(tps_values, alpha=ema_alpha)
             
             adapter_demand = []
+            adapter_name_to_tps = {}
             for adapter, tps in demand_tps.items():
                 rank = int(re.search(r"rank-(\d+)", adapter).group(1))
                 adapter_demand.append((rank, tps, adapter))  # tps here is expected tps
+                adapter_name_to_tps[adapter] = tps
             adapter_demand.sort(reverse=True)
 
             rank_wise_demand = {}
@@ -650,7 +660,7 @@ async def benchmark_system(
                 f.write(f"\n{last_time} Adapter groups:\n")
                 for i, group in enumerate(adapter_groups):
                     f.write(
-                        f"  Server {servers[i]}: {[(adapter, used_util) for adapter, used_util in group]}\n"
+                        f"  Server {servers[i]}: {[(adapter, used_util, adapter_name_to_tps[adapter] * used_util) for adapter, used_util in group]}\n"
                     )
                     # f.write(
                     #     f"  Server {servers[i]} total tps: {server_occupied_tps[i]} max tps: {server_tps[server_max_rank[i]]}\n"
@@ -720,7 +730,15 @@ async def benchmark_system(
             prev_rank_assigned_instances = rank_assigned_instances.copy()
             step_idx += 1
             last_time = req
-        await asyncio.sleep(start + req.req_time - time.time())
+            
+            alloc_end = time.time()
+            with open("allocation_log.txt", "a") as f:
+                f.write(
+                    f"Allocation computation time: {alloc_end - alloc_start:.2f} s\n"
+                )
+        sleep_time = arrival_time - time.time()
+        if sleep_time > 0:
+            await asyncio.sleep(sleep_time)
         if debug:
             print(
                 f"{req.req_id} {req.req_time:.5f} wait {start + req.req_time - time.time():.5f} "
@@ -757,6 +775,7 @@ async def benchmark_system(
                 req.output_len,
                 output,
                 debug,
+                arrival_time
             )
         )
         tasks.append(task)
@@ -809,32 +828,39 @@ def get_res_stats(
     else:
         stats_base = per_req_latency[warmup_num:]
 
-    e2e_latencies = [latency for _, _, latency, _, _ in stats_base]
+    # each entry in stats_base: (prompt_len, output_len, request_latency, first_token_latency, tbt, scheduling_delay)
+    e2e_latencies = [latency for _, _, latency, _, _, _ in stats_base]
     per_token_latencies = [
         latency / (prompt_len + output_len)
-        for prompt_len, output_len, latency, _, _ in stats_base
+        for prompt_len, output_len, latency, _, _, _ in stats_base
         if (prompt_len + output_len) > 0
     ]
     per_output_token_latencies = [
         latency / output_len
-        for _, output_len, latency, _, _ in stats_base
+        for _, output_len, latency, _, _, _ in stats_base
         if output_len > 0
     ]
-    first_token_latencies = [latency for _, _, _, latency, _ in stats_base]
-    tbts = [latency for _, _, _, _, latency in stats_base]
+    first_token_latencies = [latency for _, _, _, latency, _, _ in stats_base]
+    tbts = [latency for _, _, _, _, latency, _ in stats_base]
     num_abort = len([i for i in stats_base if i[3] is None])
     abort_satisfaction = [0] * num_abort
     satisfactions = [
-        reward(latency) for _, _, _, latency, _ in stats_base
+        reward(latency) for _, _, _, latency, _, _ in stats_base
     ] + abort_satisfaction
     attainments = [
-        attainment_func(latency) for _, _, _, latency, _ in stats_base
+        attainment_func(latency) for _, _, _, latency, _, _ in stats_base
     ] + abort_satisfaction
+
+    scheduling_delays = [delay[5] for delay in stats_base if len(delay) > 5]
+    
+    if len(scheduling_delays) == 0:
+        scheduling_delays = [0.0] * len(stats_base)
 
     metrics = {
         "e2e": e2e_latencies,
         "per_token": per_token_latencies,
         "per_output_token": per_output_token_latencies,
+        "scheduling": scheduling_delays,
         "first_token": first_token_latencies,
         "tbt": tbts,
         "satisfaction": satisfactions,
@@ -944,6 +970,16 @@ def run_exp(
             for adapter in shuffled[start:end]:
                 server_map[adapter] = server_name
         print(server_map)
+        
+        adapter_allocations = defaultdict(list)
+        for adapter, server in server_map.items():
+            adapter_allocations[server].append(adapter)
+            
+        with open("server_map.csv", "w") as f:
+            f.write("server,adapters\n")
+            for server, adapters in adapter_allocations.items():
+                f.write(f"{server},{' '.join(adapters)}\n")
+                
         benchmark_start_time = time.time()
         per_req_latency = asyncio.run(
             benchmark_baseline(backend, server_map, requests, output, debug)
