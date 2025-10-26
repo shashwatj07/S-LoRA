@@ -59,7 +59,7 @@ async def send_request(
     arrival_time: float
 ) -> None:
     request_start_time = time.time()
-    scheduling_delay = max(0.0, request_start_time - arrival_time)
+    scheduling_latency = max(0.0, request_start_time - arrival_time)
     headers = {"Content-Type": "application/json"}
     headers = {"User-Agent": "Benchmark Client"}
     if backend == "vllm":
@@ -100,6 +100,7 @@ async def send_request(
     # with open(f"fine_{output_file}", "a") as f:
     #     f.write(f"sent {req_id}, {server}\n")
     first_token_latency = None
+    server_queuing_time, server_execution_time = None, None
     timeout = aiohttp.ClientTimeout(total=300)
     async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
         while True:
@@ -111,7 +112,12 @@ async def send_request(
                         
                     try:
                         chunk_str = chunk.decode("utf-8")
-                        print(chunk_str)
+                        if 'queue_time' in chunk_str:
+                            # print(chunk_str)
+                            json_str = chunk_str.split("data:", 1)[1]
+                            data_obj = json.loads(json_str)
+                            server_queuing_time = data_obj['token'].get('queue_time')
+                            server_execution_time = data_obj['token'].get('prefill_time')
                     except Exception as e:
                         print(f"Error decoding chunk: {e}")
                         chunk_str = ""
@@ -138,15 +144,19 @@ async def send_request(
     )
     log_line = (
         f"req_id {req_id} {server} adapter_dir {adapter_dir} prompt_len {prompt_len} output_len {output_len} "
-        f"request_latency {request_latency:.2f} s, scheduling_latency {scheduling_delay:.2f} s, first_token_latency {first_token_latency:.2f} s, tbt {tbt:.2f} s\n"
+        f"request_latency {request_latency:.4f} s, client_scheduling_latency {scheduling_latency:.4f} s, first_token_latency {first_token_latency:.4f} s, tbt {tbt:.4f} s"
     )
+    
+    if server_queuing_time is not None and server_execution_time is not None:
+        log_line += f", server_prefill_queuing_time {server_queuing_time:.4f} s, server_prefill_execution_time {server_execution_time:.4f} s"
+
     print(log_line)
     with open(f"fine_{output_file}", "a") as f:
-        f.write(log_line)
+        f.write(log_line + "\n")
     REQUEST_LATENCY.append(
-        (prompt_len, output_len, request_latency, first_token_latency, tbt, scheduling_delay)
+        (prompt_len, output_len, request_latency, first_token_latency, tbt, scheduling_latency)
     )
-    return (prompt_len, output_len, request_latency, first_token_latency, tbt, scheduling_delay)
+    return (prompt_len, output_len, request_latency, first_token_latency, tbt, scheduling_latency)
 
 
 async def benchmark_baseline(
@@ -741,8 +751,12 @@ async def benchmark_system(
             alloc_end = time.time()
             with open("allocation_log.txt", "a") as f:
                 f.write(
-                    f"Allocation computation time: {alloc_end - alloc_start:.2f} s\n"
+                    f"Allocation computation time: {alloc_end - alloc_start:.4f} s\n"
                 )
+            
+            with open("server_map.json", "a") as f:
+                json.dump(server_map, f, indent=4)
+                f.write("\n")
         sleep_time = arrival_time - time.time()
         if sleep_time > 0:
             await asyncio.sleep(sleep_time)
@@ -982,10 +996,13 @@ def run_exp(
         for adapter, server in server_map.items():
             adapter_allocations[server].append(adapter)
             
-        with open("server_map.csv", "w") as f:
-            f.write("server,adapters\n")
-            for server, adapters in adapter_allocations.items():
-                f.write(f"{server},{' '.join(adapters)}\n")
+        # with open("server_map.csv", "w") as f:
+        #     f.write("server,adapters\n")
+        #     for server, adapters in adapter_allocations.items():
+        #         f.write(f"{server},{' '.join(adapters)}\n")
+                
+        with open("server_map.json", "w") as f:
+            json.dump(server_map, f, indent=4)
                 
         benchmark_start_time = time.time()
         per_req_latency = asyncio.run(
@@ -1012,7 +1029,10 @@ def run_exp(
                 server_map[adapter] = server_name
         print("server map ", server_map)
         benchmark_start_time, benchmark_end_time = 0, 0
-
+        
+        with open("server_map.json", "w") as f:
+            json.dump(server_map, f, indent=4)
+            
         if backend == "system":
             benchmark_start_time = time.time()
             per_req_latency = asyncio.run(

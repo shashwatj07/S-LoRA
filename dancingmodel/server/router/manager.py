@@ -145,6 +145,9 @@ class RouterManager:
         return
 
     async def abort(self, request_id):
+        if hasattr(self, 'req_timing') and request_id in self.req_timing:
+            del self.req_timing[request_id]
+        
         if self.running_batch is not None:
             for req in self.running_batch.reqs:
                 if req.request_id == request_id:
@@ -269,25 +272,27 @@ class RouterManager:
             req_to_out_token_id = obtain(ans[0])
         else:
             req_to_out_token_id = ans[0]
-        self._add_token_id_to_req(batch, req_to_out_token_id)
         
         if hasattr(self, 'req_timing'):
             for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
                 if req_id in self.req_timing:
                     server_receive_time = self.req_timing[req_id]['server_receive_time']
                     first_batch_exec_start = self.req_timing[req_id]['first_batch_exec_start']
+                    last_prefill_time = time.time()
+                    self.req_timing[req_id]['last_prefill_time'] = last_prefill_time
                     
                     new_gen_metadata['server_receive_time'] = server_receive_time
                     new_gen_metadata['first_batch_exec_start'] = first_batch_exec_start
                     if server_receive_time is not None and first_batch_exec_start is not None:
                         new_gen_metadata['queue_time'] = first_batch_exec_start - server_receive_time
-                        new_gen_metadata['prefill_time'] = time.time() - first_batch_exec_start
+                        new_gen_metadata['prefill_time'] = last_prefill_time - first_batch_exec_start
                     else:
                         new_gen_metadata['queue_time'] = None
                         new_gen_metadata['prefill_time'] = None
                         
-                    del self.req_timing[req_id]
+                    # del self.req_timing[req_id]
 
+        self._add_token_id_to_req(batch, req_to_out_token_id)
         has_new_finished_req = batch.mark_finished_req(self.eos_id)
         self._send_to_detokenization_proc(batch, req_to_out_token_id)
         await self._handle_finish_req(batch, has_new_finished_req, minibatch=True)
@@ -300,6 +305,23 @@ class RouterManager:
             req_to_out_token_id = obtain(ans[0])
         else:
             req_to_out_token_id = ans[0]
+        
+        if hasattr(self, 'req_timing'):
+            for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
+                if req_id in self.req_timing:
+                    server_receive_time = self.req_timing[req_id]['server_receive_time']
+                    first_batch_exec_start = self.req_timing[req_id]['first_batch_exec_start']
+                    last_prefill_time = self.req_timing[req_id].get('last_prefill_time', None)
+                    
+                    new_gen_metadata['server_receive_time'] = server_receive_time
+                    new_gen_metadata['first_batch_exec_start'] = first_batch_exec_start
+                    if server_receive_time is not None and first_batch_exec_start is not None:
+                        new_gen_metadata['queue_time'] = first_batch_exec_start - server_receive_time
+                        new_gen_metadata['prefill_time'] = last_prefill_time - first_batch_exec_start
+                    else:
+                        new_gen_metadata['queue_time'] = None
+                        new_gen_metadata['prefill_time'] = None
+        
         self._add_token_id_to_req(batch, req_to_out_token_id)
         has_new_finished_req = batch.mark_finished_req(self.eos_id)
         self._send_to_detokenization_proc(batch, req_to_out_token_id)

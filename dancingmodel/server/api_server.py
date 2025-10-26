@@ -149,7 +149,11 @@ async def generate_stream(request: Request) -> Response:
                     "id": metadata.get("id", None),
                     "text": request_output,
                     "logprob": metadata.get("logprob", None),
-                    "special": False
+                    "special": False,
+                    "queue_time": metadata.get("queue_time", None),
+                    "prefill_time": metadata.get("prefill_time", None),
+                    "server_receive_time": metadata.get("server_receive_time", None),
+                    "first_batch_exec_start": metadata.get("first_batch_exec_start", None),
                 },
                 "generated_text": None,
                 "finished": finished,
