@@ -2,6 +2,7 @@ import zmq
 import zmq.asyncio
 import asyncio
 import uvloop
+import time
 from typing import Union
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -42,7 +43,7 @@ class HttpServerManager:
         self.max_req_total_len = max_req_total_len
 
     async def generate(self, adapter_dir, prompt, sampling_params, request_id):
-
+        server_receive_time = time.time()
         prompt_ids = self.tokenizer.encode(prompt)
         prompt_tokens = len(prompt_ids)
         if prompt_tokens > self.max_req_input_len:
@@ -61,7 +62,7 @@ class HttpServerManager:
         
         sampling_params.stop_sentences_to_token_ids(self.tokenizer)
 
-        self.send_to_router.send_pyobj((adapter_dir, prompt_ids, sampling_params, request_id))
+        self.send_to_router.send_pyobj((adapter_dir, prompt_ids, sampling_params, request_id, server_receive_time))
         event = asyncio.Event()
         self.req_id_to_out_inf[request_id] = ("", {}, False, event)
         while True:

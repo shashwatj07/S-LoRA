@@ -131,9 +131,15 @@ class RouterManager:
         adapter_dir: str,
         prompt_ids: List[int],
         sampling_params: SamplingParams,
-        request_id: str
+        request_id: str,
+        server_receive_time: float = None,
     ):
         req = Req(adapter_dir, request_id, prompt_ids, sampling_params)
+        if not hasattr(self, 'req_timing'):
+            self.req_timing = {}
+            
+        if server_receive_time is not None:
+            self.req_timing[request_id] = {'server_receive_time': server_receive_time, 'first_batch_exec_start': None}
         self.req_queue.append(req)
         self.send_to_detokenization.send_pyobj(req.to_req_detokenization_state())
         return
@@ -250,6 +256,13 @@ class RouterManager:
 
     async def _prefill_batch(self, batch, minibatch=True):
         await self._init_batch(batch)
+        first_batch_time = time.time()
+        
+        if hasattr(self, 'req_timing'):
+            for req in batch.reqs:
+                if req.request_id in self.req_timing and self.req_timing[req.request_id]['first_batch_exec_start'] is None:
+                    self.req_timing[req.request_id]['first_batch_exec_start'] = first_batch_time
+        
         rets = [self.model_rpcs[tp_rank].prefill_batch(batch.batch_id) for tp_rank in range(self.world_size)]
         ans = await asyncio.gather(*rets)
         if self.world_size != 1:
@@ -257,6 +270,24 @@ class RouterManager:
         else:
             req_to_out_token_id = ans[0]
         self._add_token_id_to_req(batch, req_to_out_token_id)
+        
+        if hasattr(self, 'req_timing'):
+            for req_id, (new_token_id, new_gen_metadata) in req_to_out_token_id.items():
+                if req_id in self.req_timing:
+                    server_receive_time = self.req_timing[req_id]['server_receive_time']
+                    first_batch_exec_start = self.req_timing[req_id]['first_batch_exec_start']
+                    
+                    new_gen_metadata['server_receive_time'] = server_receive_time
+                    new_gen_metadata['first_batch_exec_start'] = first_batch_exec_start
+                    if server_receive_time is not None and first_batch_exec_start is not None:
+                        new_gen_metadata['queue_time'] = first_batch_exec_start - server_receive_time
+                        new_gen_metadata['prefill_time'] = time.time() - first_batch_exec_start
+                    else:
+                        new_gen_metadata['queue_time'] = None
+                        new_gen_metadata['prefill_time'] = None
+                        
+                    del self.req_timing[req_id]
+
         has_new_finished_req = batch.mark_finished_req(self.eos_id)
         self._send_to_detokenization_proc(batch, req_to_out_token_id)
         await self._handle_finish_req(batch, has_new_finished_req, minibatch=True)
@@ -347,6 +378,9 @@ class RouterManager:
             if isinstance(recv_req, tuple) and len(recv_req) == 4:
                 adapter_dir, prompt_ids, sampling_params, request_id = recv_req
                 self.add_req(adapter_dir, prompt_ids, sampling_params, request_id)
+            elif isinstance(recv_req, tuple) and len(recv_req) == 5:
+                adapter_dir, prompt_ids, sampling_params, request_id, server_receive_time = recv_req
+                self.add_req(adapter_dir, prompt_ids, sampling_params, request_id, server_receive_time)
             elif isinstance(recv_req, AbortReq):
                 abort_req = recv_req
                 request_id = abort_req.req_id

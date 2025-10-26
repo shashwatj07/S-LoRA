@@ -108,6 +108,13 @@ async def send_request(
                 async for chunk, _ in response.content.iter_chunks():
                     if first_token_latency is None:
                         first_token_latency = time.time() - request_start_time
+                        
+                    try:
+                        chunk_str = chunk.decode("utf-8")
+                        print(chunk_str)
+                    except Exception as e:
+                        print(f"Error decoding chunk: {e}")
+                        chunk_str = ""
                     chunks.append(chunk)
             output = b"".join(chunks).decode("utf-8")
             # output = json.loads(output)
