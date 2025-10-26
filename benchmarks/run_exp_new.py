@@ -755,8 +755,12 @@ async def benchmark_system(
                 )
             
             with open("server_map.json", "a") as f:
-                json.dump(server_map, f, indent=4)
                 f.write("\n")
+                json.dump(server_map, f, indent=4)
+                
+            with open("demand_tps.json", "a") as f:
+                f.write("\n")
+                json.dump(adapter_name_to_tps, f, indent=4)
         sleep_time = arrival_time - time.time()
         if sleep_time > 0:
             await asyncio.sleep(sleep_time)
