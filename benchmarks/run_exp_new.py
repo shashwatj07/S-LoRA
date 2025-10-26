@@ -322,7 +322,7 @@ async def benchmark_system(
     prev_rank_assigned_instances = None
     tasks: List[asyncio.Task] = []
     last_time = input_requests[0]
-    step = 30
+    step = 60
     probability_sum = defaultdict(
         list
     )  # adapter -> [prob of server 1, prob of server 1 + prob of server 2, ...]
