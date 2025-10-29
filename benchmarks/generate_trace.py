@@ -21,7 +21,8 @@ def get_weights(size, dist):
 
         total_weight = sum(weights)
         dist = [w / total_weight for w in weights]
-        return random.shuffle(dist)
+        random.shuffle(dist)
+        return dist
     elif dist == "skew":
         return [1.0 for _ in range(20)] + [4.0 for _ in range(5)]
     elif dist == "uniform":
@@ -54,7 +55,7 @@ def get_times(size, end_time, dist, burst_size, burst_interval):
         burst_reqs = max(1, int(size * burst_fraction))
         bg_reqs = size - burst_reqs
 
-        num_bursts = min(max(1, burst_reqs), random.randint(2, 6))
+        num_bursts = min(max(1, burst_reqs), random.randint(end_time // 60, end_time // 20))
         min_frac, max_frac = 0.01, 0.05
         durations = np.random.uniform(min_frac * end_time, max_frac * end_time, num_bursts)
 
