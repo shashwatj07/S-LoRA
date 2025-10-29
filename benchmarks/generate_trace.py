@@ -39,14 +39,53 @@ def get_times(size, end_time, dist, burst_size, burst_interval):
         arrival_times = np.cumsum(inter_arrival_times)
         return arrival_times[arrival_times <= end_time]
     elif dist == "bursty":
-        times = []
-        current_time = 0
-        burst_size = int(size // (end_time / (burst_interval * 2)))
-        while len(times) < size:
-            burst_times = np.random.uniform(current_time, current_time + burst_interval, burst_size)
-            times.extend(burst_times)
-            current_time += burst_interval * 2  # wait for the next burst
-        return np.array(sorted(times))[:size]
+        # times = []
+        # current_time = 0
+        # burst_size = int(size // (end_time / (burst_interval * 2)))
+        # while len(times) < size:
+        #     burst_times = np.random.uniform(current_time, current_time + burst_interval, burst_size)
+        #     times.extend(burst_times)
+        #     current_time += burst_interval * 2  # wait for the next burst
+        # return np.array(sorted(times))[:size]
+        if size <= 3:
+            return np.sort(np.random.uniform(0, end_time, size))
+
+        burst_fraction = random.uniform(0.65, 0.8)
+        burst_reqs = max(1, int(size * burst_fraction))
+        bg_reqs = size - burst_reqs
+
+        num_bursts = min(max(1, burst_reqs), random.randint(2, 6))
+        min_frac, max_frac = 0.01, 0.05
+        durations = np.random.uniform(min_frac * end_time, max_frac * end_time, num_bursts)
+
+        weights = np.random.dirichlet([1.0] * num_bursts)
+        burst_counts = np.maximum(1, np.round(weights * burst_reqs).astype(int))
+        diff = burst_reqs - burst_counts.sum()
+        if diff != 0:
+            idx = np.argmax(burst_counts)
+            burst_counts[idx] += diff
+
+        starts = np.random.uniform(0, end_time, num_bursts)
+        durations = np.minimum(durations, np.maximum(1e-6, end_time - 1e-6))
+
+        burst_times_list = []
+        for s, d, c in zip(starts, durations, burst_counts):
+            if s + d > end_time:
+                s = max(0.0, end_time - d)
+            burst_times_list.append(np.random.uniform(s, s + d, c))
+
+        burst_times = np.concatenate(burst_times_list) if burst_times_list else np.array([])
+
+        if bg_reqs > 0:
+            bg_times = np.random.uniform(0, end_time, bg_reqs)
+            all_times = np.concatenate([burst_times, bg_times])
+        else:
+            all_times = burst_times
+
+        if len(all_times) > size:
+            all_times = all_times[:size]
+
+        return np.sort(all_times)
 
 def main():
     parser = argparse.ArgumentParser(description="Generate Traces")
