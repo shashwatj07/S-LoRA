@@ -27,6 +27,8 @@ def get_weights(size, dist):
         return [1.0 for _ in range(20)] + [4.0 for _ in range(5)]
     elif dist == "uniform":
         return [1.0 / size for _ in range(size)]
+    elif dist == "skewslide":
+        return None
 
 def get_times(size, end_time, dist, burst_size, burst_interval):
     if dist == "uniform":
@@ -88,6 +90,37 @@ def get_times(size, end_time, dist, burst_size, burst_interval):
 
         return np.sort(all_times)
 
+def sample_skew_slide(
+    names,
+    times,
+    total_time
+):
+    # first skew to 128
+    normalized_weights = get_weights(len(names), "skew")
+    samples = random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    
+    # second skew to 64 by making the penultimate 5 adapters the last 5 adapters
+    names[-1:-6:-1], names[-6:-11:-1] = names[-6:-11:-1], names[-1:-6:-1]
+    normalized_weights = get_weights(len(names), "skew")
+    samples += random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    
+    # third skew to 32 by making the middle 5 adapters the last 5 adapters
+    names[-1:-6:-1], names[-11:-16:-1] = names[-11:-16:-1], names[-1:-6:-1]
+    normalized_weights = get_weights(len(names), "skew")
+    samples += random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    
+    # fourth skew to 16 by making the antepenultimate 5 adapters the last 5 adapters
+    names[-1:-6:-1], names[5:10] = names[5:10], names[-1:-6:-1]
+    normalized_weights = get_weights(len(names), "skew")
+    samples += random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    
+    # fifth skew to 8 by making the first 5 adapters the last 5 adapters
+    names[-1:-6:-1], names[0:5] = names[0:5], names[-1:-6:-1]
+    normalized_weights = get_weights(len(names), "skew")
+    samples += random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    
+    return samples
+
 def main():
     parser = argparse.ArgumentParser(description="Generate Traces")
     parser.add_argument("--output", "-o", type=str, default="./traces",
@@ -101,7 +134,13 @@ def main():
     parser.add_argument("--burst-interval", type=float, default=2, help="Burst interval if bursty arrival pattern is chosen")
     parser.add_argument("--rps", type=float, help="Total requests per second")
     parser.add_argument("--time", "-t", type=int, default=5*60, help="Total time duration")
-    
+    parser.add_argument("--heavy-weight", type=float, default=4.0,
+                        help="Weight assigned to hot window for skew_slide")
+    parser.add_argument("--window-size", type=int, default=5,
+                        help="Size of sliding hot window for skew_slide")
+    parser.add_argument("--slide-step", type=int, default=5,
+                        help="Step (in adapters) the window shifts each phase for skew_slide")
+
     args = parser.parse_args()
     ranks_dict = dict(args.rank_frequency)
     model = args.model
@@ -118,11 +157,19 @@ def main():
             for idx in range(ranks_dict[rank]):
                 adapter_name = f"dummy-lora-{size}-rank-{rank}-{idx}"
                 names.append(adapter_name)
-    normalized_weights = get_weights(len(names), dist)
     num_samples = int(rps * time)
     times = get_times(num_samples, time, arrival_pattern, burst_size, burst_interval)
     num_samples = min(num_samples, len(times))
-    samples = random.choices(names, weights=normalized_weights, k=num_samples)
+    samples = None
+    if dist == "skewslide":
+        samples = sample_skew_slide(
+            names,
+            times[:num_samples],
+            time,
+        )
+    else:
+        normalized_weights = get_weights(len(names), dist)
+        samples = random.choices(names, weights=normalized_weights, k=num_samples)
     df = pd.read_csv("../AzureLLMInferenceTrace_conv_1week.csv")
     df = df[(df['ContextTokens'] <= 1024) & (df['GeneratedTokens'] <= 256)]
     df = df.sample(n=num_samples)
