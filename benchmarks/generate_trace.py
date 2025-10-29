@@ -90,34 +90,119 @@ def get_times(size, end_time, dist, burst_size, burst_interval):
 
         return np.sort(all_times)
 
+# def sample_skew_slide(
+#     names,
+#     times,
+# ):
+#     # first skew to 128
+#     normalized_weights = get_weights(len(names), "skew")
+#     samples = random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    
+#     # second skew to 64 by making the penultimate 5 adapters the last 5 adapters
+#     names[-1:-6:-1], names[-6:-11:-1] = names[-6:-11:-1], names[-1:-6:-1]
+#     normalized_weights = get_weights(len(names), "skew")
+#     samples += random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    
+#     # third skew to 32 by making the middle 5 adapters the last 5 adapters
+#     names[-1:-6:-1], names[-11:-16:-1] = names[-11:-16:-1], names[-1:-6:-1]
+#     normalized_weights = get_weights(len(names), "skew")
+#     samples += random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    
+#     # fourth skew to 16 by making the antepenultimate 5 adapters the last 5 adapters
+#     names[-1:-6:-1], names[5:10] = names[5:10], names[-1:-6:-1]
+#     normalized_weights = get_weights(len(names), "skew")
+#     samples += random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    
+#     # fifth skew to 8 by making the first 5 adapters the last 5 adapters
+#     names[-1:-6:-1], names[0:5] = names[0:5], names[-1:-6:-1]
+#     normalized_weights = get_weights(len(names), "skew")
+#     samples += random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    
+#     return samples
+
 def sample_skew_slide(
     names,
     times,
-    total_time
 ):
-    # first skew to 128
-    normalized_weights = get_weights(len(names), "skew")
-    samples = random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    """
+    Creates a trace where adapter popularity gradually shifts between different ranks.
+    The shifts happen with linear transitions throughout the entire trace.
+    """
+    # Define the phase orderings - these represent different rank focuses
+    phase_orderings = [
+        names[:],  # Original order - Rank 128 focused
+        # names[-6:-11:-1] + names[-1:-6:-1] + names[:-11],  # Rank 64 focused
+        # names[-11:-16:-1] + names[-1:-6:-1] + names[-6:-11:-1] + names[:-16] + names[-16:-11],  # Rank 32 focused
+        # names[5:10] + names[-1:-6:-1] + names[-11:-16:-1] + names[:5] + names[10:],  # Rank 16 focused
+        # names[0:5] + names[-1:-6:-1] + names[5:],  # Rank 8 focused
+        names[5:] + names[0:5],  # Rank 8 focused
+    ]
     
-    # second skew to 64 by making the penultimate 5 adapters the last 5 adapters
-    names[-1:-6:-1], names[-6:-11:-1] = names[-6:-11:-1], names[-1:-6:-1]
-    normalized_weights = get_weights(len(names), "skew")
-    samples += random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    samples = []
+    total_requests = len(times)
     
-    # third skew to 32 by making the middle 5 adapters the last 5 adapters
-    names[-1:-6:-1], names[-11:-16:-1] = names[-11:-16:-1], names[-1:-6:-1]
-    normalized_weights = get_weights(len(names), "skew")
-    samples += random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    # Calculate the number of segments (transitions between phases)
+    num_transitions = len(phase_orderings) - 1
     
-    # fourth skew to 16 by making the antepenultimate 5 adapters the last 5 adapters
-    names[-1:-6:-1], names[5:10] = names[5:10], names[-1:-6:-1]
-    normalized_weights = get_weights(len(names), "skew")
-    samples += random.choices(names, weights=normalized_weights, k=len(times) // 5)
-    
-    # fifth skew to 8 by making the first 5 adapters the last 5 adapters
-    names[-1:-6:-1], names[0:5] = names[0:5], names[-1:-6:-1]
-    normalized_weights = get_weights(len(names), "skew")
-    samples += random.choices(names, weights=normalized_weights, k=len(times) // 5)
+    for i, t in enumerate(times):
+        # Determine which transition we're in (0 to num_transitions)
+        progress = i / total_requests
+        transition_progress = progress * num_transitions
+        
+        # Find which two phases we're between
+        phase_idx = min(int(transition_progress), num_transitions - 1)
+        next_phase_idx = min(phase_idx + 1, len(phase_orderings) - 1)
+        
+        # Calculate the interpolation factor within this specific transition
+        # This goes from 0 to 1 within each transition segment
+        local_alpha = transition_progress - phase_idx
+        
+        # Get the orderings for interpolation
+        current_ordering = phase_orderings[phase_idx]
+        next_ordering = phase_orderings[next_phase_idx]
+        
+        # Get base weights for both orderings - using their actual lengths
+        current_weights = get_weights(len(current_ordering), "skew")
+        next_weights = get_weights(len(next_ordering), "skew")
+        
+        # Create a weight mapping for each adapter
+        adapter_weights = {}
+        
+        # Calculate interpolated weight for each adapter
+        for adapter in names:
+            # Find position and weight in current ordering
+            curr_weight = 0
+            if adapter in current_ordering:
+                curr_idx = current_ordering.index(adapter)
+                if curr_idx < len(current_weights):
+                    curr_weight = current_weights[curr_idx]
+            
+            # Find position and weight in next ordering
+            next_weight = 0
+            if adapter in next_ordering:
+                next_idx = next_ordering.index(adapter)
+                if next_idx < len(next_weights):
+                    next_weight = next_weights[next_idx]
+            
+            # Linear interpolation
+            interpolated_weight = (1 - local_alpha) * curr_weight + local_alpha * next_weight
+            adapter_weights[adapter] = interpolated_weight
+        
+        # Normalize weights
+        total_weight = sum(adapter_weights.values())
+        if total_weight > 0:
+            for adapter in adapter_weights:
+                adapter_weights[adapter] /= total_weight
+        else:
+            # Fallback to uniform if something goes wrong
+            for adapter in names:
+                adapter_weights[adapter] = 1.0 / len(names)
+        
+        # Sample based on interpolated weights
+        adapters = list(adapter_weights.keys())
+        weights = list(adapter_weights.values())
+        sample = random.choices(adapters, weights=weights, k=1)[0]
+        samples.append(sample)
     
     return samples
 
@@ -165,7 +250,6 @@ def main():
         samples = sample_skew_slide(
             names,
             times[:num_samples],
-            time,
         )
     else:
         normalized_weights = get_weights(len(names), dist)
