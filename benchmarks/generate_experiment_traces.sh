@@ -1,12 +1,14 @@
 #!/bin/bash
 set -x
 
-qps_list=(7 8 9 10)
-distributions=("uniform" "skew")
+qps_list=(20 24)
+# distributions=("uniform" "skew")
+distributions=("skewslide")
 arrivals=("uniform" "poisson" "bursty")
+# arrivals=("bursty")
 duration=900 # 15 minutes
 model="huggyllama/llama-7b"
-output_dir="./experiment_traces"
+output_dir="./experiment_traces_v2"
 
 for qps in "${qps_list[@]}"; do
     for distribution in "${distributions[@]}"; do

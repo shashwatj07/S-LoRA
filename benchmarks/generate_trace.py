@@ -120,6 +120,111 @@ def get_times(size, end_time, dist, burst_size, burst_interval):
     
 #     return samples
 
+# def sample_skew_slide(
+#     names,
+#     times,
+# ):
+#     """
+#     Creates a trace where:
+#     - First third: uniform distribution across all adapters
+#     - Middle third: adapter popularity gradually shifts between different ranks
+#     - Last third: uniform distribution across all adapters
+#     """
+#     samples = []
+#     total_requests = len(times)
+    
+#     # Divide trace into three parts
+#     first_third = total_requests // 3
+#     last_third_start = 2 * total_requests // 3
+    
+#     # Define the phase orderings for the middle third - these represent different rank focuses
+#     phase_orderings = [
+#         names[:],  # Original order - Rank 128 focused
+#         names[-6:-11:-1] + names[-1:-6:-1] + names[:-11],  # Rank 64 focused
+#         names[-11:-16:-1] + names[-1:-6:-1] + names[-6:-11:-1] + names[:-16] + names[-16:-11],  # Rank 32 focused
+#         names[5:10] + names[-1:-6:-1] + names[-11:-16:-1] + names[:5] + names[10:],  # Rank 16 focused
+#         names[0:5] + names[-1:-6:-1] + names[5:],  # Rank 8 focused
+#     ]
+    
+#     # Calculate uniform weights for first and last thirds
+#     uniform_weights = [1.0 / len(names) for _ in names]
+    
+#     # Process each request
+#     for i, t in enumerate(times):
+#         if i < first_third:
+#             # First third: uniform distribution
+#             sample = random.choices(names, weights=uniform_weights, k=1)[0]
+#             samples.append(sample)
+#         elif i >= last_third_start:
+#             # Last third: uniform distribution
+#             sample = random.choices(names, weights=uniform_weights, k=1)[0]
+#             samples.append(sample)
+#         else:
+#             # Middle third: skew sliding behavior
+#             # Adjust progress to be relative to the middle third only
+#             middle_third_size = last_third_start - first_third
+#             middle_progress = (i - first_third) / middle_third_size
+            
+#             # Calculate the number of transitions
+#             num_transitions = len(phase_orderings) - 1
+#             transition_progress = middle_progress * num_transitions
+            
+#             # Find which two phases we're between
+#             phase_idx = min(int(transition_progress), num_transitions - 1)
+#             next_phase_idx = min(phase_idx + 1, len(phase_orderings) - 1)
+            
+#             # Calculate the interpolation factor within this specific transition
+#             local_alpha = transition_progress - phase_idx
+            
+#             # Get the orderings for interpolation
+#             current_ordering = phase_orderings[phase_idx]
+#             next_ordering = phase_orderings[next_phase_idx]
+            
+#             # Get base weights for both orderings
+#             current_weights = get_weights(len(current_ordering), "skew")
+#             next_weights = get_weights(len(next_ordering), "skew")
+            
+#             # Create a weight mapping for each adapter
+#             adapter_weights = {}
+            
+#             # Calculate interpolated weight for each adapter
+#             for adapter in names:
+#                 # Find position and weight in current ordering
+#                 curr_weight = 0
+#                 if adapter in current_ordering:
+#                     curr_idx = current_ordering.index(adapter)
+#                     if curr_idx < len(current_weights):
+#                         curr_weight = current_weights[curr_idx]
+                
+#                 # Find position and weight in next ordering
+#                 next_weight = 0
+#                 if adapter in next_ordering:
+#                     next_idx = next_ordering.index(adapter)
+#                     if next_idx < len(next_weights):
+#                         next_weight = next_weights[next_idx]
+                
+#                 # Linear interpolation
+#                 interpolated_weight = (1 - local_alpha) * curr_weight + local_alpha * next_weight
+#                 adapter_weights[adapter] = interpolated_weight
+            
+#             # Normalize weights
+#             total_weight = sum(adapter_weights.values())
+#             if total_weight > 0:
+#                 for adapter in adapter_weights:
+#                     adapter_weights[adapter] /= total_weight
+#             else:
+#                 # Fallback to uniform if something goes wrong
+#                 for adapter in names:
+#                     adapter_weights[adapter] = 1.0 / len(names)
+            
+#             # Sample based on interpolated weights
+#             adapters = list(adapter_weights.keys())
+#             weights = list(adapter_weights.values())
+#             sample = random.choices(adapters, weights=weights, k=1)[0]
+#             samples.append(sample)
+    
+#     return samples
+
 def sample_skew_slide(
     names,
     times,
