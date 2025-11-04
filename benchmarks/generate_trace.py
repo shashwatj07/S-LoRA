@@ -29,6 +29,13 @@ def get_weights(size, dist):
         return [1.0 / size for _ in range(size)]
     elif dist == "skewslide":
         return None
+    elif dist == "powerlaw":
+        alpha = 2.0
+        weights = [1 / ((i + 1) ** alpha) for i in range(5)] # 5 ranks
+        total_weight = sum(weights)
+        dist = [w / total_weight for w in weights]
+        dist = [val for val in dist for _ in range(size // 5)]
+        return dist
 
 def get_times(size, end_time, dist, burst_size, burst_interval):
     if dist == "uniform":
@@ -53,12 +60,12 @@ def get_times(size, end_time, dist, burst_size, burst_interval):
         if size <= 3:
             return np.sort(np.random.uniform(0, end_time, size))
 
-        burst_fraction = random.uniform(0.65, 0.8)
+        burst_fraction = random.uniform(0.3, 0.4)
         burst_reqs = max(1, int(size * burst_fraction))
         bg_reqs = size - burst_reqs
 
-        num_bursts = min(max(1, burst_reqs), random.randint(end_time // 60, end_time // 20))
-        min_frac, max_frac = 0.01, 0.05
+        num_bursts = min(max(1, burst_reqs), random.randint(end_time // 90, end_time // 60))
+        min_frac, max_frac = 0.05, 0.10
         durations = np.random.uniform(min_frac * end_time, max_frac * end_time, num_bursts)
 
         weights = np.random.dirichlet([1.0] * num_bursts)
