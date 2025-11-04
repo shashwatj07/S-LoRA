@@ -680,9 +680,25 @@ async def benchmark_system(
                         server_idx += 1
 
                 if expected_util > 0.01:
-                    raise Exception(
-                        f"Could not allocate adapter {adapter_name} with rank {adapter_rank} and tps {adapter_demand_tps}, leftover util {expected_util}"
-                    )
+                    try:
+                        for i in range(num_servers):
+                            if server_util[i] + expected_util <= 1:
+                                adapter_groups[i].append(
+                                    [adapter_name, expected_util / _expected_util]
+                                )
+                                server_occupied_tps[i] += (
+                                    expected_util * server_tps[adapter_rank]
+                                )
+                                server_max_rank[i] = max(
+                                    server_max_rank[i], adapter_rank
+                                )
+                                server_util[i] += expected_util
+                                expected_util = 0
+                                break
+                    except Exception as e:
+                        raise Exception(
+                            f"Could not allocate adapter {adapter_name} with rank {adapter_rank} and tps {adapter_demand_tps}, leftover util {expected_util}"
+                        )
 
             print(adapter_groups)
             with open("allocation_log.txt", "a") as f:
