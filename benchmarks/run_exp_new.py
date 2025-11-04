@@ -23,6 +23,7 @@ from tqdm import tqdm
 from typing import List, Tuple
 from math import ceil
 from collections import defaultdict, deque
+from sklearn.linear_model import LinearRegression
 
 import aiohttp
 
@@ -202,13 +203,22 @@ async def benchmark_baseline(
     return latency
 
 
-def ema_next(values: list, alpha: float = 0.5):
-    assert values, "no values found when computing ema"
-    ema = values[-1]
-    for x in values[-2::-1]:
-        ema = alpha * x + (1 - alpha) * ema
-    return ema
+# def ema_next(values: list, alpha: float = 0.5):
+#     assert values, "no values found when computing ema"
+#     ema = values[-1]
+#     for x in values[-2::-1]:
+#         ema = alpha * x + (1 - alpha) * ema
+#     return ema
 
+def ema_next(values: list, alpha: float = 0.5):
+    
+    assert values, "no values found when computing ema"
+    model = LinearRegression()
+    model.fit(np.arange(len(values)).reshape(-1, 1), values)
+
+    # Predict a value beyond known points
+    extrapolated_value = model.predict(np.array([[len(values)]])).item()
+    return extrapolated_value
 
 def compare_with_prev_alloc(
     adapter_groups,
@@ -290,9 +300,10 @@ def select_server(
     )
     rand_prob = random.random()
     try:
-        chosen_server = available_servers[
-            bisect.bisect_left(prob_thresholds, rand_prob)
-        ]
+        chosen_server = available_servers[min(
+            bisect.bisect_left(prob_thresholds, rand_prob),
+            len(available_servers) - 1
+        )]
     except Exception as e:
         print(
             f"Error in bisecting {prob_thresholds} with rand_prob {rand_prob}, available_servers {available_servers}: {e}. Falling back to first in list if exists."
@@ -527,9 +538,10 @@ async def benchmark_system(
                     reverse=True, key=lambda x: x[1][1]
                 )  # sort by tps descending
                 servers_used = 0
-                rank_assigned_instances[rank] = list(
-                    range(last_used_server, last_used_server + budget)
-                )
+                if budget > 0:
+                    rank_assigned_instances[rank] = list(
+                        range(last_used_server, last_used_server + budget)
+                    )
                 for adapter_idx, adapter in adapters_of_rank:
                     tps, adapter_name = adapter[1], adapter[2]
                     expected_util = tps / server_tps[rank]
@@ -609,8 +621,8 @@ async def benchmark_system(
                 server_idx = 0
                 allocated_adapter = False
 
-                if expected_util == 0:
-                    adapter_groups[server_idx].append([adapter_name, 1.0])
+                if expected_util < 0.01:
+                    adapter_groups[server_idx].append([adapter_name, util_fraction])
                     server_max_rank[server_idx] = max(
                         server_max_rank[server_idx], adapter_rank
                     )
@@ -667,7 +679,7 @@ async def benchmark_system(
                             expected_util -= max_addable_util
                         server_idx += 1
 
-                if expected_util > 1e-3:
+                if expected_util > 0.01:
                     raise Exception(
                         f"Could not allocate adapter {adapter_name} with rank {adapter_rank} and tps {adapter_demand_tps}, leftover util {expected_util}"
                     )
