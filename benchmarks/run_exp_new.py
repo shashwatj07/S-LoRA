@@ -218,7 +218,7 @@ def ema_next(values: list, alpha: float = 0.5):
 
     # Predict a value beyond known points
     extrapolated_value = model.predict(np.array([[len(values)]])).item()
-    return extrapolated_value
+    return max(min(values), extrapolated_value, 1)
 
 def compare_with_prev_alloc(
     adapter_groups,
@@ -546,7 +546,7 @@ async def benchmark_system(
                     tps, adapter_name = adapter[1], adapter[2]
                     expected_util = tps / server_tps[rank]
                     _expected_util = expected_util
-                    while expected_util > 1e-3 and servers_used < budget:
+                    while expected_util > 1e-4 and servers_used < budget:
                         # assign as much as possible to this server
                         if servers_used >= budget:
                             raise Exception(
@@ -572,7 +572,7 @@ async def benchmark_system(
                         if server_util[server_idx] >= target_util:
                             servers_used += 1
                         expected_util -= max_addable_util
-                    if expected_util > 1e-3:
+                    if expected_util > 1e-4:
                         leftovers.append(
                             (adapter_idx, adapter, expected_util / _expected_util)
                         )
@@ -1152,6 +1152,7 @@ if __name__ == "__main__":
     if not args.append:
         os.system(f"rm {args.output}")
         os.system(f"rm allocation_log.txt")
+        os.system(f"rm fine_{args.output}")
         results = []
     else:
         with open(args.output, "r") as f:
