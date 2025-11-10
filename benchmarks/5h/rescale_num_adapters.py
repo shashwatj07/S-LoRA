@@ -4,8 +4,8 @@ import json
 import re
 from tqdm.auto import tqdm
 
-rps_list = [48, 52, 54]
-num_adapters_per_rank = 25 # total 100 adapters
+rps_list = [48, 52, 54, 56, 60, 64, 68]
+num_adapters_per_rank = 20 # total 100 adapters
 
 for rps in tqdm(rps_list):
     counters = {8: 0, 16: 0, 32: 0, 64: 0, 128: 0}
