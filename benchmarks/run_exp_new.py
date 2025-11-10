@@ -612,6 +612,7 @@ async def benchmark_system(
             leftovers.sort(
                 reverse=True, key=lambda x: (x[1][1])
             )  # sort by tps descending
+            round_robin_server_idx = 0
             for _, adapter_tuple, util_fraction in leftovers:
                 adapter_rank, adapter_demand_tps, adapter_name = adapter_tuple
                 _expected_util = adapter_demand_tps / server_tps[adapter_rank]
@@ -621,12 +622,17 @@ async def benchmark_system(
                 server_idx = 0
                 allocated_adapter = False
 
-                if expected_util < 0.01:
-                    adapter_groups[server_idx].append([adapter_name, util_fraction])
-                    server_max_rank[server_idx] = max(
-                        server_max_rank[server_idx], adapter_rank
+                if expected_util < 1e-3:
+                    adapter_groups[round_robin_server_idx].append([adapter_name, util_fraction])
+                    server_max_rank[round_robin_server_idx] = max(
+                        server_max_rank[round_robin_server_idx], adapter_rank
                     )
+                    server_occupied_tps[round_robin_server_idx] += (
+                        util_fraction * server_tps[adapter_rank]
+                    )
+                    server_util[round_robin_server_idx] += util_fraction
                     allocated_adapter = True
+                    round_robin_server_idx = (round_robin_server_idx + 1) % num_servers
                     continue
 
                 while (
@@ -679,7 +685,7 @@ async def benchmark_system(
                             expected_util -= max_addable_util
                         server_idx += 1
 
-                if expected_util > 0.01:
+                if expected_util > 1e-3:
                     try:
                         for i in range(num_servers):
                             if server_util[i] + expected_util <= 1:
@@ -707,9 +713,9 @@ async def benchmark_system(
                     f.write(
                         f"  Server {servers[i]}: {[(adapter, used_util, adapter_name_to_tps[adapter] * used_util) for adapter, used_util in group]}\n"
                     )
-                    # f.write(
-                    #     f"  Server {servers[i]} total tps: {server_occupied_tps[i]} max tps: {server_tps[server_max_rank[i]]}\n"
-                    # )
+                    f.write(
+                        f"  Server {servers[i]} total tps: {server_occupied_tps[i]}\n"
+                    )
                     f.write(
                         f"  Server {servers[i]} max tps: {server_tps.get(server_max_rank[i], 0)}\n"
                     )
@@ -717,8 +723,8 @@ async def benchmark_system(
                     f.write(f"  Server {servers[i]} max rank: {server_max_rank[i]}\n")
                 f.write("************************************\n\n")
 
-            if not rescaled_leftovers:
-                ensure_all_placed(adapter_groups)
+            # if not rescaled_leftovers:
+                # ensure_all_placed(adapter_groups)
             print(
                 f"All adapters placed successfully for step {step_idx} from time {last_time.req_time} to {req.req_time}"
             )
