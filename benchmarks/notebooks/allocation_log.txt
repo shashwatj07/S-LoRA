@@ -1,0 +1,83 @@
+
+
+************************************step 0 @ time 0.0050761888039148875 to 60.057539275606025:
+req_id=0, model_dir=huggyllama/llama-7b, adapter_dir=dummy-lora-7b-rank-128-1, prompt_len=240, output_len=58, req_time=0.0050761888039148875 Adapter groups:
+  Server http://10.0.0.1:8000: [('dummy-lora-7b-rank-16-1', 1.0, 543.9499999999999), ('dummy-lora-7b-rank-16-0', 1.0, 536.2166666666667), ('dummy-lora-7b-rank-16-2', 1.0, 524.05), ('dummy-lora-7b-rank-16-3', 1.0, 472.41666666666663), ('dummy-lora-7b-rank-16-4', 1.0, 450.9333333333334), ('dummy-lora-7b-rank-8-4', 1.0, 539.6499999999999), ('dummy-lora-7b-rank-8-3', 0.5414195152633478, 278.04599206349224)]
+  Server http://10.0.0.1:8000 total tps: 3345.2626587301584
+  Server http://10.0.0.1:8000 max tps: 5400
+  Server http://10.0.0.1:8000 util: 0.6167398997915664
+  Server http://10.0.0.1:8000 max rank: 16
+  Server http://10.0.0.2:8000: [('dummy-lora-7b-rank-32-4', 1.0, 518.3), ('dummy-lora-7b-rank-32-3', 1.0, 515.6833333333334), ('dummy-lora-7b-rank-32-0', 1.0, 480.79999999999984), ('dummy-lora-7b-rank-32-1', 1.0, 413.94999999999993), ('dummy-lora-7b-rank-32-2', 1.0, 408.76666666666665), ('dummy-lora-7b-rank-8-3', 0.4585804847366523, 235.50400793650778), ('dummy-lora-7b-rank-8-2', 1.0, 482.66666666666663), ('dummy-lora-7b-rank-8-0', 0.514352554612294, 225.08925044091674)]
+  Server http://10.0.0.2:8000 total tps: 3280.759925044091
+  Server http://10.0.0.2:8000 max tps: 5250
+  Server http://10.0.0.2:8000 util: 0.6167398997915664
+  Server http://10.0.0.2:8000 max rank: 32
+  Server http://10.0.0.3:8000: [('dummy-lora-7b-rank-64-4', 1.0, 635.916666666667), ('dummy-lora-7b-rank-64-3', 1.0, 608.6666666666667), ('dummy-lora-7b-rank-64-0', 1.0, 606.3999999999997), ('dummy-lora-7b-rank-64-1', 1.0, 566.3166666666668), ('dummy-lora-7b-rank-64-2', 1.0, 477.9999999999998), ('dummy-lora-7b-rank-8-0', 0.47356388510556824, 207.2394488536151)]
+  Server http://10.0.0.3:8000 total tps: 3102.5394488536153
+  Server http://10.0.0.3:8000 max tps: 5000
+  Server http://10.0.0.3:8000 util: 0.6167398997915664
+  Server http://10.0.0.3:8000 max rank: 64
+  Server http://10.0.0.4:8000: [('dummy-lora-7b-rank-128-3', 1.0, 654.7166666666668), ('dummy-lora-7b-rank-128-2', 1.0, 540.9833333333333), ('dummy-lora-7b-rank-128-4', 1.0, 457.65000000000015), ('dummy-lora-7b-rank-128-1', 1.0, 434.23333333333335), ('dummy-lora-7b-rank-128-0', 1.0, 357.6333333333333), ('dummy-lora-7b-rank-8-1', 1.0, 398.18333333333345)]
+  Server http://10.0.0.4:8000 total tps: 2843.4000000000005
+  Server http://10.0.0.4:8000 max tps: 4500
+  Server http://10.0.0.4:8000 util: 0.6157784511784512
+  Server http://10.0.0.4:8000 max rank: 128
+************************************
+
+Allocation computation time: 0.0226 s
+
+
+************************************step 1 @ time 60.057539275606025 to 120.00436529341047:
+req_id=1403, model_dir=huggyllama/llama-7b, adapter_dir=dummy-lora-7b-rank-8-4, prompt_len=412, output_len=55, req_time=60.057539275606025 Adapter groups:
+  Server http://10.0.0.1:8000: [('dummy-lora-7b-rank-16-4', 1.0, 763.5666666666671), ('dummy-lora-7b-rank-16-3', 1.0, 534.9500000000002), ('dummy-lora-7b-rank-16-1', 1.0, 531.1500000000002), ('dummy-lora-7b-rank-16-0', 1.0, 498.65000000000003), ('dummy-lora-7b-rank-16-2', 1.0, 420.5666666666668), ('dummy-lora-7b-rank-8-2', 1.0, 758.7666666666667), ('dummy-lora-7b-rank-8-1', 0.23497006868630815, 161.6789880952371)]
+  Server http://10.0.0.1:8000 total tps: 3669.3289880952375
+  Server http://10.0.0.1:8000 max tps: 5400
+  Server http://10.0.0.1:8000 util: 0.6764062245470579
+  Server http://10.0.0.1:8000 max rank: 16
+  Server http://10.0.0.2:8000: [('dummy-lora-7b-rank-32-2', 1.0, 910.1666666666664), ('dummy-lora-7b-rank-32-3', 1.0, 492.63333333333327), ('dummy-lora-7b-rank-32-1', 1.0, 485.2500000000001), ('dummy-lora-7b-rank-32-4', 1.0, 403.8666666666665), ('dummy-lora-7b-rank-32-0', 1.0, 386.23333333333323), ('dummy-lora-7b-rank-8-1', 0.7650299313136918, 526.4043452380957), ('dummy-lora-7b-rank-8-4', 0.5778175472865953, 388.14893738977065)]
+  Server http://10.0.0.2:8000 total tps: 3592.703282627866
+  Server http://10.0.0.2:8000 max tps: 5250
+  Server http://10.0.0.2:8000 util: 0.6764062245470579
+  Server http://10.0.0.2:8000 max rank: 32
+  Server http://10.0.0.3:8000: [('dummy-lora-7b-rank-64-3', 1.0, 597.6833333333332), ('dummy-lora-7b-rank-64-1', 1.0, 590.2833333333333), ('dummy-lora-7b-rank-64-0', 1.0, 496.53333333333336), ('dummy-lora-7b-rank-64-4', 1.0, 417.90000000000003), ('dummy-lora-7b-rank-64-2', 1.0, 409.69999999999993), ('dummy-lora-7b-rank-8-4', 0.42218245271340477, 283.60106261022986), ('dummy-lora-7b-rank-8-0', 1.0, 583.6166666666669), ('dummy-lora-7b-rank-8-3', 0.20970896687895768, 89.70650573192212)]
+  Server http://10.0.0.3:8000 total tps: 3469.0242350088183
+  Server http://10.0.0.3:8000 max tps: 5000
+  Server http://10.0.0.3:8000 util: 0.6764062245470579
+  Server http://10.0.0.3:8000 max rank: 64
+  Server http://10.0.0.4:8000: [('dummy-lora-7b-rank-128-4', 1.0, 777.3499999999997), ('dummy-lora-7b-rank-128-3', 1.0, 625.8500000000001), ('dummy-lora-7b-rank-128-2', 1.0, 563.2166666666668), ('dummy-lora-7b-rank-128-0', 1.0, 411.9999999999999), ('dummy-lora-7b-rank-128-1', 1.0, 388.8166666666668), ('dummy-lora-7b-rank-8-3', 0.7902910331210414, 338.06016093474415)]
+  Server http://10.0.0.4:8000 total tps: 3105.293494268077
+  Server http://10.0.0.4:8000 max tps: 4500
+  Server http://10.0.0.4:8000 util: 0.6764062245470579
+  Server http://10.0.0.4:8000 max rank: 128
+************************************
+
+Server renames detected: {0: 0, 1: 1, 2: 2, 3: 3}
+Allocation computation time: 0.0222 s
+
+
+************************************step 2 @ time 120.00436529341047 to 180.1742202558148:
+req_id=2837, model_dir=huggyllama/llama-7b, adapter_dir=dummy-lora-7b-rank-32-4, prompt_len=57, output_len=54, req_time=120.00436529341047 Adapter groups:
+  Server http://10.0.0.1:8000: [('dummy-lora-7b-rank-16-4', 1.0, 579.9055555555555), ('dummy-lora-7b-rank-16-2', 1.0, 527.4666666666666), ('dummy-lora-7b-rank-16-3', 1.0, 512.9944444444445), ('dummy-lora-7b-rank-16-0', 1.0, 498.8722222222222), ('dummy-lora-7b-rank-16-1', 1.0, 473.1833333333334), ('dummy-lora-7b-rank-8-1', 1.0, 612.9222222222221), ('dummy-lora-7b-rank-8-0', 0.5174153697087133, 305.1457142857136)]
+  Server http://10.0.0.1:8000 total tps: 3510.4901587301574
+  Server http://10.0.0.1:8000 max tps: 5400
+  Server http://10.0.0.1:8000 util: 0.6469996323018544
+  Server http://10.0.0.1:8000 max rank: 16
+  Server http://10.0.0.2:8000: [('dummy-lora-7b-rank-32-4', 1.0, 660.8666666666663), ('dummy-lora-7b-rank-32-3', 1.0, 603.755555555555), ('dummy-lora-7b-rank-32-2', 1.0, 544.0444444444443), ('dummy-lora-7b-rank-32-1', 1.0, 482.32222222222236), ('dummy-lora-7b-rank-32-0', 1.0, 458.96666666666664), ('dummy-lora-7b-rank-8-0', 0.4825846302912867, 284.6042857142863), ('dummy-lora-7b-rank-8-4', 0.6744128683092144, 392.9878718400937)]
+  Server http://10.0.0.2:8000 total tps: 3427.5477131099346
+  Server http://10.0.0.2:8000 max tps: 5250
+  Server http://10.0.0.2:8000 util: 0.6469996323018544
+  Server http://10.0.0.2:8000 max rank: 32
+  Server http://10.0.0.3:8000: [('dummy-lora-7b-rank-64-1', 1.0, 638.7333333333331), ('dummy-lora-7b-rank-64-4', 1.0, 612.2888888888888), ('dummy-lora-7b-rank-64-2', 1.0, 490.36666666666684), ('dummy-lora-7b-rank-64-3', 1.0, 469.3333333333333), ('dummy-lora-7b-rank-64-0', 1.0, 452.06666666666683), ('dummy-lora-7b-rank-8-4', 0.32558713169078557, 189.7232392710173), ('dummy-lora-7b-rank-8-2', 0.8718674242947477, 439.706960611405)]
+  Server http://10.0.0.3:8000 total tps: 3292.2190887713114
+  Server http://10.0.0.3:8000 max tps: 5000
+  Server http://10.0.0.3:8000 util: 0.6469996323018544
+  Server http://10.0.0.3:8000 max rank: 64
+  Server http://10.0.0.4:8000: [('dummy-lora-7b-rank-128-4', 1.0, 640.9111111111109), ('dummy-lora-7b-rank-128-2', 1.0, 581.6222222222225), ('dummy-lora-7b-rank-128-0', 1.0, 503.7388888888886), ('dummy-lora-7b-rank-128-3', 1.0, 398.85000000000014), ('dummy-lora-7b-rank-128-1', 1.0, 385.3), ('dummy-lora-7b-rank-8-2', 0.12813257570525227, 64.62081716637276), ('dummy-lora-7b-rank-8-3', 0.9999999999999989, 425.58333333333303)]
+  Server http://10.0.0.4:8000 total tps: 3000.6263727219284
+  Server http://10.0.0.4:8000 max tps: 4500
+  Server http://10.0.0.4:8000 util: 0.6469996323018544
+  Server http://10.0.0.4:8000 max rank: 128
+************************************
+
+Server renames detected: {0: 0, 1: 1, 2: 2, 3: 3}
+Allocation computation time: 0.0215 s
