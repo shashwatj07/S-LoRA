@@ -4,8 +4,8 @@ import json
 import re
 
 
-rps_list = [34]
-num_adapters_per_rank = 10 # total 50 adapters
+rps_list = [56, 60, 64, 68]
+num_adapters_per_rank = 25 # total 100 adapters
 
 for rps in rps_list:
     counters = {8: 0, 16: 0, 32: 0, 64: 0, 128: 0}
@@ -17,4 +17,4 @@ for rps in rps_list:
         counters[rank] %= num_adapters_per_rank
         df.at[idx, "adapter_dir"] = adapter
     
-    df.to_csv(f"./uniform_poisson_{rps}.0_900_50_adapters.csv", index=False)
+    df.to_csv(f"./uniform_poisson_{rps}.0_900_100_adapters.csv", index=False)

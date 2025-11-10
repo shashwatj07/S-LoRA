@@ -1,4 +1,3 @@
-
 # !python -m pip install numpy icecream scikit-learn pprint
 
 
@@ -23,31 +22,52 @@ import time
 def reset_allocation_log():
     with open("./allocation_log.txt", "w") as f:
         f.write("")
-        
+
+
 reset_allocation_log()
 
-rps_list = [12, 16, 20, 24, 28, 32, 36]
+rps_list = [56, 60, 64, 68]
 
 for rps in tqdm(rps_list):
-    TRACE_FILE=f"/home/azureuser/localfiles/S-LoRA/benchmarks/experiment_traces_v2/uniform_poisson_{rps}.0_900.csv"
+    TRACE_FILE = f"/home/azureuser/localfiles/S-LoRA/benchmarks/5h/uniform_poisson_{rps}.0_900_100_adapters.csv"
+    servers = [
+        "http://10.0.0.1:8000",
+        "http://10.0.0.2:8000",
+        "http://10.0.0.3:8000",
+        "http://10.0.0.4:8000",
+        "http://10.0.0.5:8000",
+        "http://10.0.0.6:8000",
+        "http://10.0.0.7:8000",
+        "http://10.0.0.8:8000",
+    ]
     # servers = ["http://10.0.0.1:8000", "http://10.0.0.2:8000", "http://10.0.0.3:8000", "http://10.0.0.4:8000"]
-    servers = ["http://10.0.0.1:8000", "http://10.0.0.2:8000"]
-    server_map_folder = f"server_maps/{TRACE_FILE.split('/')[-1].replace('.csv', '_server_maps')}"
+    # servers = ["http://10.0.0.1:8000", "http://10.0.0.2:8000"]
+    server_map_folder = (
+        f"server_maps/{TRACE_FILE.split('/')[-1].replace('.csv', '_server_maps')}"
+    )
     server_map_folder += f"_{len(servers)}_servers"
     os.makedirs(server_map_folder, exist_ok=True)
     os.makedirs(f"{server_map_folder}/system", exist_ok=True)
     os.makedirs(f"{server_map_folder}/baseline", exist_ok=True)
     os.makedirs(f"{server_map_folder}/contiguous", exist_ok=True)
-    
-    backend="system"
-    step = 60
 
+    backend = "system"
+    step = 60
 
     @total_ordering
     class Request:
-        def __init__(self, req_id, model_dir, adapter_dir, prompt, prompt_len, output_len, req_time):
+        def __init__(
+            self,
+            req_id,
+            model_dir,
+            adapter_dir,
+            prompt,
+            prompt_len,
+            output_len,
+            req_time,
+        ):
             self.req_id = req_id
-            self.model_dir = model_dir 
+            self.model_dir = model_dir
             self.adapter_dir = adapter_dir
             self.prompt = prompt
             self.prompt_len = prompt_len
@@ -55,10 +75,12 @@ for rps in tqdm(rps_list):
             self.req_time = req_time
 
         def __repr__(self):
-            return f"req_id={self.req_id}, " \
-                f"model_dir={self.model_dir}, adapter_dir={self.adapter_dir}, " \
-                f"prompt_len={self.prompt_len}, output_len={self.output_len}, " \
+            return (
+                f"req_id={self.req_id}, "
+                f"model_dir={self.model_dir}, adapter_dir={self.adapter_dir}, "
+                f"prompt_len={self.prompt_len}, output_len={self.output_len}, "
                 f"req_time={self.req_time}"
+            )
 
         def __eq__(self, other):
             return self.req_id == other.req_id
@@ -68,8 +90,6 @@ for rps in tqdm(rps_list):
 
     def dummy_prompt(prompt_len):
         return "Hello " * prompt_len
-
-
 
     def read_requests(trace_file):
         requests = []
@@ -94,7 +114,6 @@ for rps in tqdm(rps_list):
         requests.sort(key=lambda r: r.req_time)
         return list(adapter_dirs), requests
 
-
     adapter_dirs, requests = read_requests(trace_file=TRACE_FILE)
     avg_prompt_len = np.mean([req.prompt_len for req in requests])
     avg_output_len = np.mean([req.output_len for req in requests])
@@ -112,9 +131,8 @@ for rps in tqdm(rps_list):
         avg_output_len,
     )
 
-
     def ema_next(values: list, alpha: float = 0.5):
-        
+
         assert values, "no values found when computing ema"
         model = LinearRegression()
         model.fit(np.arange(len(values)).reshape(-1, 1), values)
@@ -122,7 +140,6 @@ for rps in tqdm(rps_list):
         # Predict a value beyond known points
         extrapolated_value = model.predict(np.array([[len(values)]])).item()
         return max(min(values), extrapolated_value, 1)
-
 
     def compare_with_prev_alloc(
         adapter_groups,
@@ -164,14 +181,14 @@ for rps in tqdm(rps_list):
                             )
                             if (
                                 union_adapters_sum_tps > 0
-                                and intersection_adapters_sum_tps / union_adapters_sum_tps
+                                and intersection_adapters_sum_tps
+                                / union_adapters_sum_tps
                                 > jaccard_threshold
                             ):
                                 server_rename_map[curr_server] = prev_server
                                 break
 
         return server_rename_map
-
 
     def ensure_all_placed(adapter_groups, epsilon: float = 0.1):
         """
@@ -191,8 +208,6 @@ for rps in tqdm(rps_list):
                 abs(util - 1) < epsilon
             ), f"Adapter {adapter} not fully placed, util={util}"
 
-
-
     def select_server(
         server_map, probability_sum, req, adapter_groups=None, adapter_demand=None
     ):
@@ -205,10 +220,12 @@ for rps in tqdm(rps_list):
         )
         rand_prob = random.random()
         try:
-            chosen_server = available_servers[min(
-                bisect.bisect_left(prob_thresholds, rand_prob),
-                len(available_servers) - 1
-            )]
+            chosen_server = available_servers[
+                min(
+                    bisect.bisect_left(prob_thresholds, rand_prob),
+                    len(available_servers) - 1,
+                )
+            ]
         except Exception as e:
             print(
                 f"Error in bisecting {prob_thresholds} with rand_prob {rand_prob}, available_servers {available_servers}: {e}. Falling back to first in list if exists."
@@ -222,7 +239,6 @@ for rps in tqdm(rps_list):
             else:
                 raise Exception(f"No available servers for adapter {req.adapter_dir}")
         return chosen_server
-
 
     def flatten_dict_values(d):
         vals = list(d.values())
@@ -238,7 +254,6 @@ for rps in tqdm(rps_list):
         raise TypeError(
             f"Dictionary values are not uniform: mixture of str and list detected: {d}"
         )
-
 
     # server map initialization
     adapters = []
@@ -256,7 +271,6 @@ for rps in tqdm(rps_list):
         end = (i + 1) * k + min(i + 1, m)
         for adapter in adapters[start:end]:
             server_map[adapter] = server_name
-
 
     start = time.time()
     step_idx = 0
@@ -287,18 +301,18 @@ for rps in tqdm(rps_list):
                     demand_tps.get(r.adapter_dir) + (r.prompt_len + r.output_len) / step
                 )
                 index += 1
-            
+
             for adapter, raw_tps in demand_tps.items():
                 history = adapter_window_history[adapter]
                 history.append((window_end_time, raw_tps))
-                
+
                 history_cutoff_time = window_end_time - ema_lookback_seconds
                 while history and history[0][0] < history_cutoff_time:
                     history.popleft()
-                    
+
                 tps_values = [tps for _, tps in history]
                 demand_tps[adapter] = ema_next(tps_values, alpha=ema_alpha)
-            
+
             adapter_demand = []
             adapter_name_to_tps = {}
             for adapter, tps in demand_tps.items():
@@ -312,7 +326,7 @@ for rps in tqdm(rps_list):
                 if rank not in rank_wise_demand:
                     rank_wise_demand[rank] = 0
                 rank_wise_demand[rank] += tps
-            
+
             # 7b tp4
             server_tps = {
                 8: 5500,
@@ -325,9 +339,9 @@ for rps in tqdm(rps_list):
             rank_instance_demand = {}
             for rank, tps in rank_wise_demand.items():
                 rank_instance_demand[rank] = tps / server_tps[rank]
-            
+
             total_instance_demand = sum(rank_instance_demand.values())
-            
+
             flattened_server_map = flatten_dict_values(server_map)
             servers = sorted(list(set(flattened_server_map)))
             adapter_groups = [[] for _ in servers]
@@ -347,44 +361,68 @@ for rps in tqdm(rps_list):
                 )
 
             # * checking compatibility
-            rank_instance_budget = [(rank, sum(tps for r, tps, _ in adapter_demand if r == rank) / rank_max_tps) for rank, rank_max_tps in server_tps.items()]
-            sorted_budgets = sorted(rank_instance_budget, key=lambda x: x[1], reverse=True)
-            assert sum(budget for _, budget in rank_instance_budget) <= num_servers, "Exceeded server budget"
+            rank_instance_budget = [
+                (
+                    rank,
+                    sum(tps for r, tps, _ in adapter_demand if r == rank)
+                    / rank_max_tps,
+                )
+                for rank, rank_max_tps in server_tps.items()
+            ]
+            sorted_budgets = sorted(
+                rank_instance_budget, key=lambda x: x[1], reverse=True
+            )
+            assert (
+                sum(budget for _, budget in rank_instance_budget) <= num_servers
+            ), "Exceeded server budget"
             if debug:
                 ic(sorted_budgets, target_util)
-                
-                
+
             # * rounding
-            rounded_budgets = [(budget, rank, round(budget/target_util))
-                            for rank, budget in sorted_budgets if round(budget/target_util) > 0]
+            rounded_budgets = [
+                (budget, rank, round(budget / target_util))
+                for rank, budget in sorted_budgets
+                if round(budget / target_util) > 0
+            ]
             if len(rounded_budgets) == 0:
                 # Force at least one instance for the largest rank budget
                 largest_rank, largest_budget = max(sorted_budgets, key=lambda x: x[1])
                 rounded_budgets = [(largest_budget, largest_rank, 1)]
-                
-            rounded_budgets.sort(reverse=True, key=lambda x: (x[0]/x[2], x[1]))
+
+            rounded_budgets.sort(reverse=True, key=lambda x: (x[0] / x[2], x[1]))
             if debug:
                 ic(rounded_budgets)
-                
-            zero_budgets = [(budget, rank, round(budget/target_util))
-                            for rank, budget in sorted_budgets if round(budget/target_util) == 0]
-            
+
+            zero_budgets = [
+                (budget, rank, round(budget / target_util))
+                for rank, budget in sorted_budgets
+                if round(budget / target_util) == 0
+            ]
+
             sum_rounded_off_budgets = sum(budget for _, _, budget in rounded_budgets)
             while sum_rounded_off_budgets < num_servers:
                 # print("Increasing instances")
                 first = rounded_budgets[0]
-                rounded_budgets = [(first[0], first[1], first[2]+1)] + rounded_budgets[1:].copy()
-                rounded_budgets.sort(reverse=True, key=lambda x: (x[0]/x[2], x[1]))
-                sum_rounded_off_budgets = sum(budget for _, _, budget in rounded_budgets)
+                rounded_budgets = [
+                    (first[0], first[1], first[2] + 1)
+                ] + rounded_budgets[1:].copy()
+                rounded_budgets.sort(reverse=True, key=lambda x: (x[0] / x[2], x[1]))
+                sum_rounded_off_budgets = sum(
+                    budget for _, _, budget in rounded_budgets
+                )
             rounded_budgets.sort(key=lambda x: x[1])
             sum_rounded_off_budgets = sum(budget for _, _, budget in rounded_budgets)
             while sum_rounded_off_budgets > num_servers:
                 # print("Decreasing instances")
                 first = rounded_budgets[0]
                 assert first[2] > 0, "Cannot reduce instances further"
-                rounded_budgets = [(first[0], first[1], first[2] - 1)] + rounded_budgets[1:].copy()
+                rounded_budgets = [
+                    (first[0], first[1], first[2] - 1)
+                ] + rounded_budgets[1:].copy()
                 rounded_budgets.sort(key=lambda x: x[1])
-                sum_rounded_off_budgets = sum(budget for _, _, budget in rounded_budgets)
+                sum_rounded_off_budgets = sum(
+                    budget for _, _, budget in rounded_budgets
+                )
             if debug:
                 ic(rounded_budgets)
 
@@ -399,14 +437,26 @@ for rps in tqdm(rps_list):
             server_util = [0] * num_servers
             leftovers = []
             for rank in ranks_with_zero_instances:
-                leftovers.extend([(idx, adapter, 1.0) for idx, adapter in enumerate(adapter_demand) if adapter[0] == rank])
+                leftovers.extend(
+                    [
+                        (idx, adapter, 1.0)
+                        for idx, adapter in enumerate(adapter_demand)
+                        if adapter[0] == rank
+                    ]
+                )
             for rank, budget in ranks_with_assigned_instances:
                 # assign adapters of rank to num_instances greedily
                 # maybe sort in descending tps order and assign fractionally from the left
 
                 # get all adapters of this rank
-                adapters_of_rank = [(idx, adapter) for idx, adapter in enumerate(adapter_demand) if adapter[0] == rank]
-                adapters_of_rank.sort(reverse=True, key=lambda x: x[1][1])  # sort by tps descending
+                adapters_of_rank = [
+                    (idx, adapter)
+                    for idx, adapter in enumerate(adapter_demand)
+                    if adapter[0] == rank
+                ]
+                adapters_of_rank.sort(
+                    reverse=True, key=lambda x: x[1][1]
+                )  # sort by tps descending
                 if debug:
                     ic(adapters_of_rank)
                 servers_used = 0
@@ -419,7 +469,7 @@ for rps in tqdm(rps_list):
                     expected_util = tps / server_tps[rank]
                     _expected_util = expected_util
                     while expected_util > 1e-4 and servers_used < budget:
-                        #assign as much as possible to this server
+                        # assign as much as possible to this server
                         if servers_used >= budget:
                             ic(servers_used, budget, adapter_idx, adapter)
                             raise Exception(
@@ -427,30 +477,42 @@ for rps in tqdm(rps_list):
                             )
                         server_idx = last_used_server + servers_used
                         # assign to this server
-                        max_addable_util = min(target_util - server_util[server_idx], expected_util)
-                        adapter_groups[server_idx].append([adapter_name, max_addable_util/_expected_util])
-                        server_occupied_tps[server_idx] += max_addable_util * server_tps[rank]
-                        
+                        max_addable_util = min(
+                            target_util - server_util[server_idx], expected_util
+                        )
+                        adapter_groups[server_idx].append(
+                            [adapter_name, max_addable_util / _expected_util]
+                        )
+                        server_occupied_tps[server_idx] += (
+                            max_addable_util * server_tps[rank]
+                        )
+
                         # adapters_placed[adapter_idx] = True
-                        server_max_rank[server_idx] = max(server_max_rank[server_idx], rank)
+                        server_max_rank[server_idx] = max(
+                            server_max_rank[server_idx], rank
+                        )
                         server_util[server_idx] += max_addable_util
                         if server_util[server_idx] >= target_util:
                             servers_used += 1
                         expected_util -= max_addable_util
                     if expected_util > 1e-4:
-                        leftovers.append((adapter_idx, adapter, expected_util/_expected_util))
+                        leftovers.append(
+                            (adapter_idx, adapter, expected_util / _expected_util)
+                        )
                 last_used_server += budget
-            
+
             if debug:
                 for adapter_group in adapter_groups:
                     ic(adapter_group)
                 ic(leftovers)
 
-            #* leftovers
+            # * leftovers
             space_left = (target_util * num_servers) - sum(server_util)
             demand_left = 0
             for _, adapter_tuple, util_fraction in leftovers:
-                demand_left += (adapter_tuple[1] * util_fraction)/server_tps[adapter_tuple[0]]
+                demand_left += (adapter_tuple[1] * util_fraction) / server_tps[
+                    adapter_tuple[0]
+                ]
             if demand_left - space_left >= 1e-3:
                 with open("allocation_log.txt", "a") as f:
                     f.write(
@@ -480,9 +542,11 @@ for rps in tqdm(rps_list):
                 ic("space left", space_left)
                 ic("demand left", demand_left)
 
-            leftovers.sort(reverse=True, key=lambda x: (x[1][1]))  # sort by tps descending
+            leftovers.sort(
+                reverse=True, key=lambda x: (x[1][1])
+            )  # sort by tps descending
             round_robin_server_idx = 0
-            
+
             for _, adapter_tuple, util_fraction in leftovers:
                 adapter_rank, adapter_demand_tps, adapter_name = adapter_tuple
                 _expected_util = adapter_demand_tps / server_tps[adapter_rank]
@@ -492,7 +556,9 @@ for rps in tqdm(rps_list):
                 server_idx = 0
                 allocated_adapter = False
                 if expected_util < 1e-3:
-                    adapter_groups[round_robin_server_idx].append([adapter_name, util_fraction])
+                    adapter_groups[round_robin_server_idx].append(
+                        [adapter_name, util_fraction]
+                    )
                     server_max_rank[round_robin_server_idx] = max(
                         server_max_rank[round_robin_server_idx], adapter_rank
                     )
@@ -503,13 +569,28 @@ for rps in tqdm(rps_list):
                     allocated_adapter = True
                     round_robin_server_idx = (round_robin_server_idx + 1) % num_servers
                     continue
-                
-                while expected_util > 1e-3 and server_idx < num_servers and not allocated_adapter:
-                    if server_max_rank[server_idx] >= adapter_rank and server_util[server_idx] < target_util:
-                        max_addable_util = min(target_util - server_util[server_idx], expected_util)
-                        adapter_groups[server_idx].append([adapter_name, max_addable_util/_expected_util])
-                        server_occupied_tps[server_idx] += max_addable_util * server_tps[adapter_rank]
-                        server_max_rank[server_idx] = max(server_max_rank[server_idx], adapter_rank)
+
+                while (
+                    expected_util > 1e-3
+                    and server_idx < num_servers
+                    and not allocated_adapter
+                ):
+                    if (
+                        server_max_rank[server_idx] >= adapter_rank
+                        and server_util[server_idx] < target_util
+                    ):
+                        max_addable_util = min(
+                            target_util - server_util[server_idx], expected_util
+                        )
+                        adapter_groups[server_idx].append(
+                            [adapter_name, max_addable_util / _expected_util]
+                        )
+                        server_occupied_tps[server_idx] += (
+                            max_addable_util * server_tps[adapter_rank]
+                        )
+                        server_max_rank[server_idx] = max(
+                            server_max_rank[server_idx], adapter_rank
+                        )
                         server_util[server_idx] += max_addable_util
                         expected_util -= max_addable_util
                     server_idx += 1
@@ -523,12 +604,25 @@ for rps in tqdm(rps_list):
                     # need to colocate with a lower rank
                     while expected_util > 1e-3 and server_idx < num_servers:
                         if debug:
-                            ic(server_idx, server_util[server_idx], target_util, expected_util)
+                            ic(
+                                server_idx,
+                                server_util[server_idx],
+                                target_util,
+                                expected_util,
+                            )
                         if server_util[server_idx] < target_util:
-                            max_addable_util = min(target_util - server_util[server_idx], expected_util)
-                            adapter_groups[server_idx].append([adapter_name, max_addable_util/_expected_util])
-                            server_occupied_tps[server_idx] += max_addable_util * server_tps[adapter_rank]
-                            server_max_rank[server_idx] = max(server_max_rank[server_idx], adapter_rank)
+                            max_addable_util = min(
+                                target_util - server_util[server_idx], expected_util
+                            )
+                            adapter_groups[server_idx].append(
+                                [adapter_name, max_addable_util / _expected_util]
+                            )
+                            server_occupied_tps[server_idx] += (
+                                max_addable_util * server_tps[adapter_rank]
+                            )
+                            server_max_rank[server_idx] = max(
+                                server_max_rank[server_idx], adapter_rank
+                            )
                             server_util[server_idx] += max_addable_util
                             expected_util -= max_addable_util
                         server_idx += 1
@@ -554,7 +648,6 @@ for rps in tqdm(rps_list):
                             f"Could not allocate adapter {adapter_name} with rank {adapter_rank} and tps {adapter_demand_tps}, leftover util {expected_util}"
                         )
 
-
             with open("allocation_log.txt", "a") as f:
                 f.write(f"\n{last_time} Adapter groups:\n")
                 for i, group in enumerate(adapter_groups):
@@ -572,9 +665,11 @@ for rps in tqdm(rps_list):
                 f.write("************************************\n\n")
 
             # ensure_all_placed(adapter_groups)
-            print(f"All adapters placed successfully for step {step_idx} from time {last_time.req_time} to {req.req_time}")
+            print(
+                f"All adapters placed successfully for step {step_idx} from time {last_time.req_time} to {req.req_time}"
+            )
 
-            #* compare with last iteration
+            # * compare with last iteration
             server_rename_map = None
             if prev_alloc is not None and prev_rank_assigned_instances is not None:
                 adapter_to_tps = {adapter: tps for _, tps, adapter in adapter_demand}
@@ -587,19 +682,31 @@ for rps in tqdm(rps_list):
                 )
                 if debug:
                     with open("allocation_log.txt", "a") as f:
-                        f.write(f"Prev rank assigned instances (step {step_idx - 1}): {prev_rank_assigned_instances}\n")
-                        f.write(f"Curr rank assigned instances (step {step_idx}): {rank_assigned_instances}\n")
+                        f.write(
+                            f"Prev rank assigned instances (step {step_idx - 1}): {prev_rank_assigned_instances}\n"
+                        )
+                        f.write(
+                            f"Curr rank assigned instances (step {step_idx}): {rank_assigned_instances}\n"
+                        )
                 if server_rename_map:
                     with open("allocation_log.txt", "a") as f:
                         f.write(f"Server renames detected: {server_rename_map}\n")
 
                     if debug:
                         print("Server renames detected:", server_rename_map)
-                        print(f"Prev rank assigned instances (step {step_idx - 1}):", prev_rank_assigned_instances)
-                        print(f"Curr rank assigned instances (step {step_idx}):", rank_assigned_instances)
-                        
-            server_map = defaultdict(list) # adapter -> [server1, server2, ...]
-            probability_sum = defaultdict(list) # adapter -> [prob of server 1, prob of server 1 + prob of server 2, ...]
+                        print(
+                            f"Prev rank assigned instances (step {step_idx - 1}):",
+                            prev_rank_assigned_instances,
+                        )
+                        print(
+                            f"Curr rank assigned instances (step {step_idx}):",
+                            rank_assigned_instances,
+                        )
+
+            server_map = defaultdict(list)  # adapter -> [server1, server2, ...]
+            probability_sum = defaultdict(
+                list
+            )  # adapter -> [prob of server 1, prob of server 1 + prob of server 2, ...]
             for i, server in enumerate(servers):
                 for adapter, util in adapter_groups[i]:
                     if not server_rename_map or server not in server_rename_map.keys():
@@ -619,19 +726,22 @@ for rps in tqdm(rps_list):
             prev_rank_assigned_instances = rank_assigned_instances.copy()
             last_time = req
             alloc_end = time.time()
-            
+
             with open("allocation_log.txt", "a") as f:
                 f.write(
                     f"Allocation computation time: {alloc_end - alloc_start:.4f} s\n"
                 )
-                
-            with open(f"{server_map_folder}/system/server_map_step_{step_idx}.json", "w") as f:
-                json.dump(server_map, f, indent=4)
-            with open(f"{server_map_folder}/system/probability_sum_step_{step_idx}.json", "w") as f:
-                json.dump(probability_sum, f, indent=4)
-            
-            step_idx += 1
 
+            with open(
+                f"{server_map_folder}/system/server_map_step_{step_idx}.json", "w"
+            ) as f:
+                json.dump(server_map, f, indent=4)
+            with open(
+                f"{server_map_folder}/system/probability_sum_step_{step_idx}.json", "w"
+            ) as f:
+                json.dump(probability_sum, f, indent=4)
+
+            step_idx += 1
 
     random.seed(42)
     shuffled = adapter_dirs.copy()
@@ -649,7 +759,6 @@ for rps in tqdm(rps_list):
     with open(f"{server_map_folder}/baseline/server_map.json", "w") as f:
         json.dump(baseline_server_map, f, indent=4)
 
-
     adapters = []
     for adapter in adapter_dirs:
         rank = int(re.search(r"rank-(\d+)", adapter).group(1))
@@ -665,8 +774,6 @@ for rps in tqdm(rps_list):
         end = (i + 1) * k + min(i + 1, m)
         for adapter in adapters[start:end]:
             contiguous_server_map[adapter] = server_name
-            
+
     with open(f"{server_map_folder}/contiguous/server_map.json", "w") as f:
         json.dump(contiguous_server_map, f, indent=4)
-
-
