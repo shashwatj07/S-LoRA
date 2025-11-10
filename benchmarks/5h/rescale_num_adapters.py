@@ -2,12 +2,12 @@ import pandas as pd
 import numpy as np
 import json
 import re
+from tqdm.auto import tqdm
 
-
-rps_list = [56, 60, 64, 68]
+rps_list = [48, 52, 54]
 num_adapters_per_rank = 25 # total 100 adapters
 
-for rps in rps_list:
+for rps in tqdm(rps_list):
     counters = {8: 0, 16: 0, 32: 0, 64: 0, 128: 0}
     df = pd.read_csv(f"../experiment_traces_v2/uniform_poisson_{rps}.0_900.csv")
     for idx, row in df.iterrows():
