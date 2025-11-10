@@ -339,8 +339,7 @@ async def benchmark_from_servermaps(
             chosen_server = adapter_servers
         else:
             if backend == "system":
-                probability_sum_for_adapter = probability_sums_by_step.get(step_idx, {}).get(req.adapter_dir)
-                chosen_server = select_server(server_map_for_step, probability_sum_for_adapter, req)
+                chosen_server = select_server(server_map_for_step, probability_sums_by_step.get(step_idx, {}), req)
             else:
                 raise ValueError(f"Multiple servers found for adapter {req.adapter_dir} at step {step_idx} but backend is {backend}, expected 'system' backend for multiple server selection.")
             
@@ -1062,7 +1061,8 @@ def run_exp(
             server_maps_by_step = json.load(open(os.path.join(server_maps_dir, "server_map.json"), "r"))
             max_step_idx = np.inf
             probability_sums_by_step = None
-            
+        
+        benchmark_start_time = time.time()
         per_req_latency = asyncio.run(
             benchmark_from_servermaps(
                 backend=backend,
@@ -1246,4 +1246,6 @@ if __name__ == "__main__":
         args.debug,
         args.warmup_time,
         args.warmup_requests,
+        args.server_maps_dir,
+        args.step_size
     )
