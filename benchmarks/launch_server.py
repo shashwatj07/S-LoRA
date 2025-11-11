@@ -2,8 +2,17 @@ import argparse
 import os
 import psutil
 import sys
+import re
 
 from exp_suite import BASE_MODEL, LORA_DIR
+
+def parse_key_value(s):
+    try:
+        key, value = s.split("=")
+        return int(key), int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid format: '{s}', expected format key=value")
+
 
 
 if __name__ == "__main__":
@@ -24,8 +33,12 @@ if __name__ == "__main__":
     parser.add_argument("--batch-num-adapters", type=int, default=None)
     parser.add_argument("--enable-abort", action="store_true")
     parser.add_argument("--vllm-mem-ratio", type=float, default=0.95)
-    args = parser.parse_args()
+    parser.add_argument("--rank-frequency", "-r", type=parse_key_value, nargs="+", default=[],
+                    help="Pass rank=frequency pairs like 8=3 16=4 128=6")
 
+    args = parser.parse_args()
+    
+    ranks_dict = dict(args.rank_frequency)
     base_model = BASE_MODEL[args.model_setting]
     adapter_dirs = LORA_DIR[args.model_setting]
 
@@ -49,10 +62,16 @@ if __name__ == "__main__":
         cmd += f" --model {base_model}"
         cmd += f" --tokenizer_mode auto"
 
-        num_iter = args.num_adapter // len(adapter_dirs) + 1
-        for i in range(num_iter):
+        if ranks_dict:
             for adapter_dir in adapter_dirs:
-                cmd += f" --lora {adapter_dir}-{i}"
+                rank = int(re.search(r"rank-(\d+)", adapter_dir).group(1))
+                for i in range(ranks_dict.get(rank, 0)):
+                    cmd += f" --lora {adapter_dir}-{i}"
+        else:
+            num_iter = args.num_adapter // len(adapter_dirs) + 1
+            for i in range(num_iter):
+                for adapter_dir in adapter_dirs:
+                    cmd += f" --lora {adapter_dir}-{i}"
 
         cmd += " --dummy"
         cmd += " --swap"
