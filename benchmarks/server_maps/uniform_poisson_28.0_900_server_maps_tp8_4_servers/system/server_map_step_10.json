@@ -1,0 +1,80 @@
+{
+    "dummy-lora-7b-rank-16-4": [
+        "http://10.0.0.1:8000"
+    ],
+    "dummy-lora-7b-rank-16-0": [
+        "http://10.0.0.1:8000"
+    ],
+    "dummy-lora-7b-rank-16-3": [
+        "http://10.0.0.1:8000"
+    ],
+    "dummy-lora-7b-rank-16-2": [
+        "http://10.0.0.1:8000"
+    ],
+    "dummy-lora-7b-rank-16-1": [
+        "http://10.0.0.1:8000"
+    ],
+    "dummy-lora-7b-rank-8-4": [
+        "http://10.0.0.1:8000"
+    ],
+    "dummy-lora-7b-rank-8-0": [
+        "http://10.0.0.1:8000",
+        "http://10.0.0.2:8000"
+    ],
+    "dummy-lora-7b-rank-32-0": [
+        "http://10.0.0.2:8000"
+    ],
+    "dummy-lora-7b-rank-32-2": [
+        "http://10.0.0.2:8000"
+    ],
+    "dummy-lora-7b-rank-32-1": [
+        "http://10.0.0.2:8000"
+    ],
+    "dummy-lora-7b-rank-32-4": [
+        "http://10.0.0.2:8000"
+    ],
+    "dummy-lora-7b-rank-32-3": [
+        "http://10.0.0.2:8000"
+    ],
+    "dummy-lora-7b-rank-8-3": [
+        "http://10.0.0.2:8000",
+        "http://10.0.0.3:8000"
+    ],
+    "dummy-lora-7b-rank-64-3": [
+        "http://10.0.0.3:8000"
+    ],
+    "dummy-lora-7b-rank-64-1": [
+        "http://10.0.0.3:8000"
+    ],
+    "dummy-lora-7b-rank-64-4": [
+        "http://10.0.0.3:8000"
+    ],
+    "dummy-lora-7b-rank-64-2": [
+        "http://10.0.0.3:8000"
+    ],
+    "dummy-lora-7b-rank-64-0": [
+        "http://10.0.0.3:8000"
+    ],
+    "dummy-lora-7b-rank-8-2": [
+        "http://10.0.0.3:8000"
+    ],
+    "dummy-lora-7b-rank-8-1": [
+        "http://10.0.0.3:8000",
+        "http://10.0.0.4:8000"
+    ],
+    "dummy-lora-7b-rank-128-3": [
+        "http://10.0.0.4:8000"
+    ],
+    "dummy-lora-7b-rank-128-1": [
+        "http://10.0.0.4:8000"
+    ],
+    "dummy-lora-7b-rank-128-2": [
+        "http://10.0.0.4:8000"
+    ],
+    "dummy-lora-7b-rank-128-0": [
+        "http://10.0.0.4:8000"
+    ],
+    "dummy-lora-7b-rank-128-4": [
+        "http://10.0.0.4:8000"
+    ]
+}
