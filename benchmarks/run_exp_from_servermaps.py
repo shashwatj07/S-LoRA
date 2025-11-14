@@ -319,7 +319,7 @@ def get_res_stats(
     return res
 
 
-def read_requests(trace_file):
+def read_requests(trace_file, servers=True):
     requests = []
     adapter_dirs = set()
     servers = []
@@ -340,9 +340,57 @@ def read_requests(trace_file):
             )
             # requests.append((int(elements[0]),elements[1],elements[2],int(elements[3]),int(elements[4]),float(elements[5])))
             adapter_dirs.add(elements[2])
-            servers.append(elements[6].strip())
+            if servers:
+                servers.append(elements[6].strip())
     requests.sort(key=lambda r: r.req_time)
-    return list(adapter_dirs), requests, servers
+    if servers:
+        return list(adapter_dirs), requests, servers
+    else:
+        return list(adapter_dirs), requests
+
+async def benchmark_baseline(
+    backend: str,
+    server_map: str,
+    input_requests: List[Tuple[str, str, str, int, int]],
+    output,
+    debug=False,
+    this_server=None
+) -> None:
+    start = time.time()
+    tasks: List[asyncio.Task] = []
+    for req in input_requests:
+        arrival_time = start + req.req_time
+        sleep_time = arrival_time - time.time()
+        if sleep_time > 0:
+            await asyncio.sleep(sleep_time)
+        if debug:
+            print(
+                f"{req.req_id} {req.req_time:.5f} wait {start + req.req_time - time.time():.5f} "
+                f"{req.adapter_dir}"
+            )
+        # print(req)
+
+        assert server_map[req.adapter_dir] is not None
+
+        if this_server is not None and server_map[req.adapter_dir] == this_server:
+            task = asyncio.create_task(
+                send_request(
+                    backend,
+                    "http://127.0.0.1:8000",
+                    req.req_id,
+                    req.model_dir,
+                    req.adapter_dir,
+                    req.prompt,
+                    req.prompt_len,
+                    req.output_len,
+                    output,
+                    debug,
+                    arrival_time
+                )
+            )
+            tasks.append(task)
+    latency = await asyncio.gather(*tasks)
+    return latency
 
 
 def run_exp(
@@ -353,11 +401,15 @@ def run_exp(
     debug=False,
     warmup_time: int = 60,
     warmup_num: int = 600,
+    server_map_file: str = None,
 ):
     # first generate your data using real_trace/clean_chat_data.py
     # base_model = BASE_MODEL[model_setting]
     # adapter_dirs = LORA_DIR[model_setting]
-    adapter_dirs, requests, routed_servers = read_requests(trace_file=trace_file)
+    if backend == "system":
+        adapter_dirs, requests, routed_servers = read_requests(trace_file=trace_file)
+    else:
+        adapter_dirs, requests = read_requests(trace_file=trace_file, servers=False)
     # print(requests)
     avg_prompt_len = np.mean([req.prompt_len for req in requests])
     avg_output_len = np.mean([req.output_len for req in requests])
@@ -379,21 +431,30 @@ def run_exp(
         print("num requests:", len(requests))
         for req in requests[:4]:
             print(req)
-            
-    benchmark_start_time = time.time()
-    per_req_latency = asyncio.run(
-        benchmark_from_servermaps(
-            backend=backend,
-            servers=servers,
-            routed_servers=routed_servers,
-            input_requests=requests,
-            output=output,
-            debug=debug,
+    
+    if backend == "system":
+        benchmark_start_time = time.time()
+        per_req_latency = asyncio.run(
+            benchmark_from_servermaps(
+                backend=backend,
+                servers=servers,
+                routed_servers=routed_servers,
+                input_requests=requests,
+                output=output,
+                debug=debug,
+            )
         )
-    )
-    benchmark_end_time = time.time()
-    benchmark_time = benchmark_end_time - benchmark_start_time
-
+        benchmark_end_time = time.time()
+        benchmark_time = benchmark_end_time - benchmark_start_time
+    else:
+        server_map = json.load(open(server_map_file, "r"))
+        benchmark_start_time = time.time()
+        per_req_latency = asyncio.run(
+            benchmark_baseline(backend, server_map, requests, output, debug, this_server=servers[0])
+        )
+        benchmark_end_time = time.time()
+        benchmark_time = benchmark_end_time - benchmark_start_time
+        
     res = get_res_stats(
         per_req_latency,
         benchmark_time,
@@ -441,6 +502,11 @@ if __name__ == "__main__":
         default=600,
         help="Number of requests considered as warmup, excluded from stats (rps * warmup-time)",
     )
+    parser.add_argument(
+        "--server-map-file",
+        type=str,
+        help="Path to server map file for baseline or contiguous backend",
+    )
     
     args = parser.parse_args()
 
@@ -483,4 +549,5 @@ if __name__ == "__main__":
         args.debug,
         args.warmup_time,
         args.warmup_requests,
+        args.server_map_file
     )
