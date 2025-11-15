@@ -40,6 +40,12 @@ REQUEST_LATENCY: List[Tuple[int, int, float]] = []
 vllm_packed_adapter_dir_to_url_map = {}
 
 
+REMAINING_PREFILLS_PER_SERVER = defaultdict(dict)
+REMAINING_DECODES_PER_SERVER = defaultdict(dict)
+PREFILL_LOCK = asyncio.Lock()
+DECODE_LOCK = asyncio.Lock()
+
+
 def get_peak_mem(server):
     url = server + "/get_peak_mem"
     response = requests.post(url)
@@ -70,7 +76,7 @@ async def send_request(
     else:
         url = server + "/generate_stream"
 
-    if backend in ["dm", "system", "baseline", "contiguous"]:
+    if backend in ["dm", "system", "baseline", "contiguous", "toppings"]:
         data = {
             "model_dir": model_dir,
             "lora_dir": adapter_dir,
@@ -110,7 +116,15 @@ async def send_request(
                 async for chunk, _ in response.content.iter_chunks():
                     if first_token_latency is None:
                         first_token_latency = time.time() - request_start_time
-                        
+                        if backend == "toppings":
+                            rank = int(re.search(r"rank-(\d+)", adapter_dir).group(1))
+                            with PREFILL_LOCK:
+                                REMAINING_PREFILLS_PER_SERVER[server][rank] -= prompt_len
+                    
+                    if backend == "toppings":
+                        rank = int(re.search(r"rank-(\d+)", adapter_dir).group(1))
+                        with DECODE_LOCK:
+                            REMAINING_DECODES_PER_SERVER[server][rank] -= 1
                     try:
                         chunk_str = chunk.decode("utf-8")
                         if 'queue_time' in chunk_str:
@@ -202,6 +216,88 @@ async def benchmark_baseline(
     latency = await asyncio.gather(*tasks)
     return latency
 
+def calc_cost_toppings(req, server, operating_points):
+    time_to_process = 0.0
+    
+    for rank in [8, 16, 32, 64, 128]:
+        with PREFILL_LOCK and DECODE_LOCK:
+            total_tokens_rank = REMAINING_PREFILLS_PER_SERVER[server].get(rank, 0) + REMAINING_DECODES_PER_SERVER[server].get(rank, 0)
+        time_for_rank = total_tokens_rank / operating_points[rank]
+        time_to_process += time_for_rank
+        
+    return time_to_process
+
+async def benchmark_toppings(
+    backend: str,
+    input_requests: List[Tuple[str, str, str, int, int]],
+    output,
+    servers,
+    debug=False,
+) -> None:
+    start = time.time()
+    tasks: List[asyncio.Task] = []
+    for req in input_requests:
+        arrival_time = start + req.req_time
+        sleep_time = arrival_time - time.time()
+        if sleep_time > 0:
+            await asyncio.sleep(sleep_time)
+        if debug:
+            print(
+                f"{req.req_id} {req.req_time:.5f} wait {start + req.req_time - time.time():.5f} "
+                f"{req.adapter_dir}"
+            )
+        # print(req)
+        
+        operating_points = {
+            8: 5500,
+            16: 5400,
+            32: 5250,
+            64: 5000,
+            128: 4500,
+        }  # operating point, fn of max rank, ND96asrv 8xA100 80GB
+        
+        #! todo, select server with toppings algo
+        chosen_server = servers[0]
+        min_cost = np.inf
+
+        for server in servers:
+            cost = calc_cost_toppings(req, server, operating_points)
+            if cost < min_cost:
+                min_cost = cost
+                chosen_server = server
+
+        assert chosen_server is not None and chosen_server in servers, f"Chosen server {chosen_server} is invalid."
+
+        with PREFILL_LOCK:
+            rank = int(re.search(r"rank-(\d+)", req.adapter_dir).group(1))
+            if rank not in REMAINING_PREFILLS_PER_SERVER[chosen_server]:
+                REMAINING_PREFILLS_PER_SERVER[chosen_server][rank] = 0
+            REMAINING_PREFILLS_PER_SERVER[chosen_server][rank] += req.prompt_len
+            
+        with DECODE_LOCK:
+            rank = int(re.search(r"rank-(\d+)", req.adapter_dir).group(1))
+            if rank not in REMAINING_DECODES_PER_SERVER[chosen_server]:
+                REMAINING_DECODES_PER_SERVER[chosen_server][rank] = 0
+            REMAINING_DECODES_PER_SERVER[chosen_server][rank] += (req.output_len - 1)
+        
+        task = asyncio.create_task(
+            send_request(
+                backend,
+                chosen_server,
+                req.req_id,
+                req.model_dir,
+                req.adapter_dir,
+                req.prompt,
+                req.prompt_len,
+                req.output_len,
+                output,
+                debug,
+                arrival_time
+            )
+        )
+        tasks.append(task)
+    latency = await asyncio.gather(*tasks)
+    return latency
 
 # def ema_next(values: list, alpha: float = 0.5):
 #     assert values, "no values found when computing ema"
@@ -1013,7 +1109,7 @@ def run_exp(
         print("num requests:", len(requests))
         for req in requests[:4]:
             print(req)
-    if backend == "baseline":
+    if backend == "baseline" or backend == "toppings":
         # benchmark
         random.seed(42)
         shuffled = adapter_dirs.copy()
@@ -1041,13 +1137,21 @@ def run_exp(
                 
         with open("server_map.json", "w") as f:
             json.dump(server_map, f, indent=4)
-                
-        benchmark_start_time = time.time()
-        per_req_latency = asyncio.run(
-            benchmark_baseline(backend, server_map, requests, output, debug)
-        )
-        benchmark_end_time = time.time()
-        benchmark_time = benchmark_end_time - benchmark_start_time
+        
+        if backend == "baseline":
+            benchmark_start_time = time.time()
+            per_req_latency = asyncio.run(
+                benchmark_baseline(backend, server_map, requests, output, debug)
+            )
+            benchmark_end_time = time.time()
+            benchmark_time = benchmark_end_time - benchmark_start_time
+        elif backend == "toppings":
+            benchmark_start_time = time.time()
+            per_req_latency = asyncio.run(
+                benchmark_toppings(backend, requests, output, servers, debug)
+            )
+            benchmark_end_time = time.time()
+            benchmark_time = benchmark_end_time - benchmark_start_time
     elif backend == "system" or backend == "contiguous":
         # benchmark
         adapters = []
