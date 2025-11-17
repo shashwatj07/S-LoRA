@@ -1,11 +1,8 @@
 {
-    "dummy-lora-7b-rank-16-4": [
+    "dummy-lora-7b-rank-16-2": [
         1.0
     ],
     "dummy-lora-7b-rank-16-3": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-16-2": [
         1.0
     ],
     "dummy-lora-7b-rank-16-0": [
@@ -14,14 +11,14 @@
     "dummy-lora-7b-rank-16-1": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-0": [
+    "dummy-lora-7b-rank-16-4": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-3": [
-        0.3520543040481885,
+    "dummy-lora-7b-rank-8-1": [
         1.0
     ],
-    "dummy-lora-7b-rank-32-0": [
+    "dummy-lora-7b-rank-8-4": [
+        0.2526780245812208,
         1.0
     ],
     "dummy-lora-7b-rank-32-2": [
@@ -33,34 +30,43 @@
     "dummy-lora-7b-rank-32-4": [
         1.0
     ],
+    "dummy-lora-7b-rank-32-0": [
+        1.0
+    ],
     "dummy-lora-7b-rank-32-3": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-1": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-8-4": [
-        0.15604690908329322,
-        1.0
-    ],
-    "dummy-lora-7b-rank-64-2": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-64-0": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-64-3": [
+    "dummy-lora-7b-rank-8-3": [
+        0.7663313452285926,
         1.0
     ],
     "dummy-lora-7b-rank-64-4": [
         1.0
     ],
+    "dummy-lora-7b-rank-64-3": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-64-0": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-64-2": [
+        1.0
+    ],
     "dummy-lora-7b-rank-64-1": [
         1.0
     ],
+    "dummy-lora-7b-rank-8-0": [
+        1.0
+    ],
     "dummy-lora-7b-rank-8-2": [
-        0.6122058936370921,
-        0.9999999999999991
+        0.09900324883209292,
+        1.0
+    ],
+    "dummy-lora-7b-rank-128-2": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-128-1": [
+        1.0
     ],
     "dummy-lora-7b-rank-128-4": [
         1.0
@@ -68,13 +74,7 @@
     "dummy-lora-7b-rank-128-3": [
         1.0
     ],
-    "dummy-lora-7b-rank-128-1": [
-        1.0
-    ],
     "dummy-lora-7b-rank-128-0": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-128-2": [
         1.0
     ]
 }

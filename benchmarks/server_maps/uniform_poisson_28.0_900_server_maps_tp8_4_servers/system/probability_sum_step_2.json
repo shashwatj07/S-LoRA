@@ -1,33 +1,24 @@
 {
-    "dummy-lora-7b-rank-16-3": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-16-4": [
-        1.0
-    ],
     "dummy-lora-7b-rank-16-2": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-16-0": [
         1.0
     ],
     "dummy-lora-7b-rank-16-1": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-3": [
+    "dummy-lora-7b-rank-16-3": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-1": [
-        0.15386452604825623,
+    "dummy-lora-7b-rank-16-0": [
         1.0
     ],
-    "dummy-lora-7b-rank-32-2": [
+    "dummy-lora-7b-rank-16-4": [
         1.0
     ],
-    "dummy-lora-7b-rank-32-0": [
+    "dummy-lora-7b-rank-8-4": [
         1.0
     ],
-    "dummy-lora-7b-rank-32-3": [
+    "dummy-lora-7b-rank-8-0": [
+        0.22780284315993662,
         1.0
     ],
     "dummy-lora-7b-rank-32-1": [
@@ -36,30 +27,36 @@
     "dummy-lora-7b-rank-32-4": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-2": [
-        0.5243646408511327,
+    "dummy-lora-7b-rank-32-2": [
         1.0
     ],
-    "dummy-lora-7b-rank-64-3": [
+    "dummy-lora-7b-rank-32-3": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-32-0": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-8-1": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-8-2": [
+        0.023440434697515847,
+        0.4591700975538097,
         1.0
     ],
     "dummy-lora-7b-rank-64-1": [
         1.0
     ],
-    "dummy-lora-7b-rank-64-2": [
-        1.0
-    ],
     "dummy-lora-7b-rank-64-0": [
         1.0
     ],
+    "dummy-lora-7b-rank-64-3": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-64-2": [
+        1.0
+    ],
     "dummy-lora-7b-rank-64-4": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-8-0": [
-        0.4855735388699495,
-        1.0
-    ],
-    "dummy-lora-7b-rank-128-4": [
         1.0
     ],
     "dummy-lora-7b-rank-128-2": [
@@ -74,7 +71,10 @@
     "dummy-lora-7b-rank-128-0": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-4": [
-        0.9999999999999972
+    "dummy-lora-7b-rank-128-4": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-8-3": [
+        1.0
     ]
 }

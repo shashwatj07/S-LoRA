@@ -1,11 +1,5 @@
 {
-    "dummy-lora-7b-rank-16-3": [
-        1.0
-    ],
     "dummy-lora-7b-rank-16-1": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-16-0": [
         1.0
     ],
     "dummy-lora-7b-rank-16-4": [
@@ -14,11 +8,17 @@
     "dummy-lora-7b-rank-16-2": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-4": [
+    "dummy-lora-7b-rank-16-3": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-16-0": [
         1.0
     ],
     "dummy-lora-7b-rank-8-0": [
-        0.5785296210068821,
+        1.0
+    ],
+    "dummy-lora-7b-rank-8-2": [
+        0.6562809476176984,
         1.0
     ],
     "dummy-lora-7b-rank-32-3": [
@@ -36,17 +36,17 @@
     "dummy-lora-7b-rank-32-1": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-3": [
+    "dummy-lora-7b-rank-8-4": [
+        0.8432995532461384,
         1.0
     ],
-    "dummy-lora-7b-rank-8-1": [
-        0.5068513908335578,
-        1.0
-    ],
-    "dummy-lora-7b-rank-64-3": [
+    "dummy-lora-7b-rank-64-0": [
         1.0
     ],
     "dummy-lora-7b-rank-64-4": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-64-3": [
         1.0
     ],
     "dummy-lora-7b-rank-64-1": [
@@ -55,14 +55,14 @@
     "dummy-lora-7b-rank-64-2": [
         1.0
     ],
-    "dummy-lora-7b-rank-64-0": [
+    "dummy-lora-7b-rank-8-3": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-2": [
-        0.5528658582080157,
-        1.0
+    "dummy-lora-7b-rank-8-1": [
+        0.29839173582859135,
+        0.9999999999999943
     ],
-    "dummy-lora-7b-rank-128-3": [
+    "dummy-lora-7b-rank-128-0": [
         1.0
     ],
     "dummy-lora-7b-rank-128-2": [
@@ -71,10 +71,10 @@
     "dummy-lora-7b-rank-128-4": [
         1.0
     ],
-    "dummy-lora-7b-rank-128-1": [
+    "dummy-lora-7b-rank-128-3": [
         1.0
     ],
-    "dummy-lora-7b-rank-128-0": [
+    "dummy-lora-7b-rank-128-1": [
         1.0
     ]
 }

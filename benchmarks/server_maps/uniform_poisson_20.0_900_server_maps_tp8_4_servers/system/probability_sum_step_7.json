@@ -1,24 +1,24 @@
 {
-    "dummy-lora-7b-rank-16-0": [
-        1.0
-    ],
     "dummy-lora-7b-rank-16-3": [
         1.0
     ],
     "dummy-lora-7b-rank-16-2": [
         1.0
     ],
-    "dummy-lora-7b-rank-16-1": [
+    "dummy-lora-7b-rank-16-4": [
         1.0
     ],
-    "dummy-lora-7b-rank-16-4": [
+    "dummy-lora-7b-rank-16-0": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-16-1": [
         1.0
     ],
     "dummy-lora-7b-rank-8-4": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-1": [
-        0.9680846581457622,
+    "dummy-lora-7b-rank-8-0": [
+        0.4606868012876658,
         1.0
     ],
     "dummy-lora-7b-rank-32-2": [
@@ -27,54 +27,54 @@
     "dummy-lora-7b-rank-32-1": [
         1.0
     ],
-    "dummy-lora-7b-rank-32-4": [
+    "dummy-lora-7b-rank-32-0": [
         1.0
     ],
-    "dummy-lora-7b-rank-32-0": [
+    "dummy-lora-7b-rank-32-4": [
         1.0
     ],
     "dummy-lora-7b-rank-32-3": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-2": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-8-0": [
-        0.4480849311669048,
-        1.0
-    ],
-    "dummy-lora-7b-rank-64-1": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-64-0": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-64-3": [
+    "dummy-lora-7b-rank-8-3": [
+        0.8794059105390517,
         1.0
     ],
     "dummy-lora-7b-rank-64-4": [
         1.0
     ],
+    "dummy-lora-7b-rank-64-3": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-64-1": [
+        1.0
+    ],
     "dummy-lora-7b-rank-64-2": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-3": [
-        0.6758837752808224,
-        0.9999999999999984
-    ],
-    "dummy-lora-7b-rank-128-3": [
+    "dummy-lora-7b-rank-64-0": [
         1.0
+    ],
+    "dummy-lora-7b-rank-8-2": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-8-1": [
+        0.3843309286951159,
+        0.999999999999996
     ],
     "dummy-lora-7b-rank-128-1": [
         1.0
     ],
-    "dummy-lora-7b-rank-128-0": [
+    "dummy-lora-7b-rank-128-4": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-128-3": [
         1.0
     ],
     "dummy-lora-7b-rank-128-2": [
         1.0
     ],
-    "dummy-lora-7b-rank-128-4": [
+    "dummy-lora-7b-rank-128-0": [
         1.0
     ]
 }

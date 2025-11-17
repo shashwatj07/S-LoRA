@@ -1,5 +1,5 @@
 {
-    "dummy-lora-7b-rank-16-0": [
+    "dummy-lora-7b-rank-16-4": [
         1.0
     ],
     "dummy-lora-7b-rank-16-2": [
@@ -8,23 +8,16 @@
     "dummy-lora-7b-rank-16-3": [
         1.0
     ],
+    "dummy-lora-7b-rank-16-0": [
+        1.0
+    ],
     "dummy-lora-7b-rank-16-1": [
         1.0
     ],
-    "dummy-lora-7b-rank-16-4": [
-        1.0
-    ],
     "dummy-lora-7b-rank-8-3": [
-        1.0
+        0.9984537858954684
     ],
-    "dummy-lora-7b-rank-8-1": [
-        0.24072497871207388,
-        1.0
-    ],
-    "dummy-lora-7b-rank-32-2": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-32-0": [
+    "dummy-lora-7b-rank-32-3": [
         1.0
     ],
     "dummy-lora-7b-rank-32-1": [
@@ -33,14 +26,20 @@
     "dummy-lora-7b-rank-32-4": [
         1.0
     ],
-    "dummy-lora-7b-rank-32-3": [
+    "dummy-lora-7b-rank-32-0": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-32-2": [
         1.0
     ],
     "dummy-lora-7b-rank-8-0": [
-        0.3192849775010226,
         1.0
     ],
-    "dummy-lora-7b-rank-64-2": [
+    "dummy-lora-7b-rank-8-2": [
+        0.8572527469776543,
+        1.0
+    ],
+    "dummy-lora-7b-rank-64-4": [
         1.0
     ],
     "dummy-lora-7b-rank-64-0": [
@@ -49,17 +48,23 @@
     "dummy-lora-7b-rank-64-1": [
         1.0
     ],
-    "dummy-lora-7b-rank-64-4": [
-        1.0
-    ],
     "dummy-lora-7b-rank-64-3": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-4": [
-        0.7518675478966781,
+    "dummy-lora-7b-rank-64-2": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-8-1": [
+        0.6775418272481846,
         1.0
     ],
     "dummy-lora-7b-rank-128-4": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-128-3": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-128-0": [
         1.0
     ],
     "dummy-lora-7b-rank-128-2": [
@@ -68,13 +73,7 @@
     "dummy-lora-7b-rank-128-1": [
         1.0
     ],
-    "dummy-lora-7b-rank-128-0": [
+    "dummy-lora-7b-rank-8-4": [
         1.0
-    ],
-    "dummy-lora-7b-rank-128-3": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-8-2": [
-        0.9999999999999953
     ]
 }

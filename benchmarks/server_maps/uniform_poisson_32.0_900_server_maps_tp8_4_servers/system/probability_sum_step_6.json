@@ -1,33 +1,30 @@
 {
-    "dummy-lora-7b-rank-16-4": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-16-1": [
-        1.0
-    ],
     "dummy-lora-7b-rank-16-0": [
         1.0
     ],
     "dummy-lora-7b-rank-16-2": [
         1.0
     ],
+    "dummy-lora-7b-rank-16-4": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-16-1": [
+        1.0
+    ],
     "dummy-lora-7b-rank-16-3": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-2": [
+    "dummy-lora-7b-rank-8-1": [
         1.0
     ],
     "dummy-lora-7b-rank-8-0": [
-        0.7006890586420293,
-        1.0
-    ],
-    "dummy-lora-7b-rank-32-1": [
+        0.5410352448219251,
         1.0
     ],
     "dummy-lora-7b-rank-32-0": [
         1.0
     ],
-    "dummy-lora-7b-rank-32-2": [
+    "dummy-lora-7b-rank-32-1": [
         1.0
     ],
     "dummy-lora-7b-rank-32-4": [
@@ -36,14 +33,20 @@
     "dummy-lora-7b-rank-32-3": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-4": [
+    "dummy-lora-7b-rank-32-2": [
         1.0
     ],
-    "dummy-lora-7b-rank-8-3": [
-        0.2520574018347977,
+    "dummy-lora-7b-rank-8-2": [
+        0.8692212038739521,
+        1.0
+    ],
+    "dummy-lora-7b-rank-64-0": [
         1.0
     ],
     "dummy-lora-7b-rank-64-4": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-64-1": [
         1.0
     ],
     "dummy-lora-7b-rank-64-3": [
@@ -52,20 +55,16 @@
     "dummy-lora-7b-rank-64-2": [
         1.0
     ],
-    "dummy-lora-7b-rank-64-0": [
-        1.0
+    "dummy-lora-7b-rank-8-4": [
+        0.995935308453727
     ],
-    "dummy-lora-7b-rank-64-1": [
-        1.0
-    ],
-    "dummy-lora-7b-rank-8-1": [
-        0.26040698250436206,
-        0.9999999999999998
-    ],
-    "dummy-lora-7b-rank-128-0": [
+    "dummy-lora-7b-rank-128-1": [
         1.0
     ],
     "dummy-lora-7b-rank-128-3": [
+        1.0
+    ],
+    "dummy-lora-7b-rank-128-0": [
         1.0
     ],
     "dummy-lora-7b-rank-128-4": [
@@ -74,7 +73,7 @@
     "dummy-lora-7b-rank-128-2": [
         1.0
     ],
-    "dummy-lora-7b-rank-128-1": [
+    "dummy-lora-7b-rank-8-3": [
         1.0
     ]
 }
