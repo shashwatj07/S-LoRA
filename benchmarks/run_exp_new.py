@@ -118,13 +118,15 @@ async def send_request(
                         first_token_latency = time.time() - request_start_time
                         if backend == "toppings":
                             rank = int(re.search(r"rank-(\d+)", adapter_dir).group(1))
-                            with PREFILL_LOCK:
-                                REMAINING_PREFILLS_PER_SERVER[server][rank] -= prompt_len
+                            await PREFILL_LOCK.acquire()
+                            REMAINING_PREFILLS_PER_SERVER[server][rank] -= prompt_len
+                            PREFILL_LOCK.release()
                     
                     if backend == "toppings":
                         rank = int(re.search(r"rank-(\d+)", adapter_dir).group(1))
-                        with DECODE_LOCK:
-                            REMAINING_DECODES_PER_SERVER[server][rank] -= 1
+                        await DECODE_LOCK.acquire()
+                        REMAINING_DECODES_PER_SERVER[server][rank] -= 1
+                        DECODE_LOCK.release()
                     try:
                         chunk_str = chunk.decode("utf-8")
                         if 'queue_time' in chunk_str:
@@ -216,12 +218,19 @@ async def benchmark_baseline(
     latency = await asyncio.gather(*tasks)
     return latency
 
-def calc_cost_toppings(req, server, operating_points):
+async def calc_cost_toppings(req, server, operating_points):
     time_to_process = 0.0
     
     for rank in [8, 16, 32, 64, 128]:
-        with PREFILL_LOCK and DECODE_LOCK:
-            total_tokens_rank = REMAINING_PREFILLS_PER_SERVER[server].get(rank, 0) + REMAINING_DECODES_PER_SERVER[server].get(rank, 0)
+        await PREFILL_LOCK.acquire()
+        await DECODE_LOCK.acquire()
+        remaining_prefills = REMAINING_PREFILLS_PER_SERVER[server].get(rank, 0)
+        remaining_decodes = REMAINING_DECODES_PER_SERVER[server].get(rank, 0)
+        jitter_factor = 1 + random.uniform(-0.25, 0.25) 
+        jittered_decodes = max(0, int(remaining_decodes * jitter_factor))
+        total_tokens_rank = remaining_prefills + jittered_decodes
+        PREFILL_LOCK.release()
+        DECODE_LOCK.release()
         time_for_rank = total_tokens_rank / operating_points[rank]
         time_to_process += time_for_rank
         
@@ -261,24 +270,26 @@ async def benchmark_toppings(
         min_cost = np.inf
 
         for server in servers:
-            cost = calc_cost_toppings(req, server, operating_points)
+            cost = await calc_cost_toppings(req, server, operating_points)
             if cost < min_cost:
                 min_cost = cost
                 chosen_server = server
 
         assert chosen_server is not None and chosen_server in servers, f"Chosen server {chosen_server} is invalid."
 
-        with PREFILL_LOCK:
-            rank = int(re.search(r"rank-(\d+)", req.adapter_dir).group(1))
-            if rank not in REMAINING_PREFILLS_PER_SERVER[chosen_server]:
-                REMAINING_PREFILLS_PER_SERVER[chosen_server][rank] = 0
-            REMAINING_PREFILLS_PER_SERVER[chosen_server][rank] += req.prompt_len
+        await PREFILL_LOCK.acquire()
+        rank = int(re.search(r"rank-(\d+)", req.adapter_dir).group(1))
+        if rank not in REMAINING_PREFILLS_PER_SERVER[chosen_server]:
+            REMAINING_PREFILLS_PER_SERVER[chosen_server][rank] = 0
+        REMAINING_PREFILLS_PER_SERVER[chosen_server][rank] += req.prompt_len
+        PREFILL_LOCK.release()
             
-        with DECODE_LOCK:
-            rank = int(re.search(r"rank-(\d+)", req.adapter_dir).group(1))
-            if rank not in REMAINING_DECODES_PER_SERVER[chosen_server]:
-                REMAINING_DECODES_PER_SERVER[chosen_server][rank] = 0
-            REMAINING_DECODES_PER_SERVER[chosen_server][rank] += (req.output_len - 1)
+        await DECODE_LOCK.acquire()
+        rank = int(re.search(r"rank-(\d+)", req.adapter_dir).group(1))
+        if rank not in REMAINING_DECODES_PER_SERVER[chosen_server]:
+            REMAINING_DECODES_PER_SERVER[chosen_server][rank] = 0
+        REMAINING_DECODES_PER_SERVER[chosen_server][rank] += (req.output_len - 1)
+        DECODE_LOCK.release()
         
         task = asyncio.create_task(
             send_request(
@@ -1176,6 +1187,19 @@ def run_exp(
             json.dump(server_map, f, indent=4)
             
         if backend == "system":
+            random.seed(42)
+            shuffled = adapter_dirs.copy()
+            random.shuffle(shuffled)
+
+            # Split shuffled list into n parts as evenly as possible
+            k, m = divmod(len(shuffled), len(servers))
+            # server_map = {adapter:server_name for adapter in shuffled[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i, server_name in enumerate(servers)}
+            server_map = {}
+            for i, server_name in enumerate(servers):
+                start = i * k + min(i, m)
+                end = (i + 1) * k + min(i + 1, m)
+                for adapter in shuffled[start:end]:
+                    server_map[adapter] = server_name
             benchmark_start_time = time.time()
             per_req_latency = asyncio.run(
                 benchmark_system(
@@ -1209,7 +1233,7 @@ if __name__ == "__main__":
         "--backend",
         type=str,
         required=True,
-        choices=["system", "baseline", "contiguous"],
+        choices=["system", "baseline", "contiguous", "toppings"],
     )
 
     # parser.add_argument("--model-setting", type=str, default="S1")
