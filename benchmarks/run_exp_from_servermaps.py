@@ -319,7 +319,7 @@ def get_res_stats(
     return res
 
 
-def read_requests(trace_file, servers=True):
+def read_requests(trace_file, servers_flag=True):
     requests = []
     adapter_dirs = set()
     servers = []
@@ -340,10 +340,10 @@ def read_requests(trace_file, servers=True):
             )
             # requests.append((int(elements[0]),elements[1],elements[2],int(elements[3]),int(elements[4]),float(elements[5])))
             adapter_dirs.add(elements[2])
-            if servers:
+            if servers_flag:
                 servers.append(elements[6].strip())
     requests.sort(key=lambda r: r.req_time)
-    if servers:
+    if servers_flag:
         return list(adapter_dirs), requests, servers
     else:
         return list(adapter_dirs), requests
@@ -407,9 +407,9 @@ def run_exp(
     # base_model = BASE_MODEL[model_setting]
     # adapter_dirs = LORA_DIR[model_setting]
     if backend == "system":
-        adapter_dirs, requests, routed_servers = read_requests(trace_file=trace_file)
+        adapter_dirs, requests, routed_servers = read_requests(trace_file=trace_file, servers_flag=True)
     else:
-        adapter_dirs, requests = read_requests(trace_file=trace_file, servers=False)
+        adapter_dirs, requests = read_requests(trace_file=trace_file, servers_flag=False)
     # print(requests)
     avg_prompt_len = np.mean([req.prompt_len for req in requests])
     avg_output_len = np.mean([req.output_len for req in requests])
