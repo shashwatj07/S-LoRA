@@ -225,10 +225,12 @@ async def calc_cost_toppings(req, server, operating_points):
         await PREFILL_LOCK.acquire()
         await DECODE_LOCK.acquire()
         remaining_prefills = REMAINING_PREFILLS_PER_SERVER[server].get(rank, 0)
-        remaining_decodes = REMAINING_DECODES_PER_SERVER[server].get(rank, 0)
-        jitter_factor = 1 + random.uniform(-0.25, 0.25) 
-        jittered_decodes = max(0, int(remaining_decodes * jitter_factor))
-        total_tokens_rank = remaining_prefills + jittered_decodes
+        # remaining_decodes = REMAINING_DECODES_PER_SERVER[server].get(rank, 0)
+        # jitter_factor = 1 + random.uniform(-0.25, 0.25) 
+        # jittered_decodes = max(0, int(remaining_decodes * jitter_factor))
+        # total_tokens_rank = remaining_prefills + jittered_decodes
+        avg_decode = 70
+        total_tokens_rank = remaining_prefills + avg_decode
         PREFILL_LOCK.release()
         DECODE_LOCK.release()
         time_for_rank = total_tokens_rank / operating_points[rank]
@@ -257,13 +259,15 @@ async def benchmark_toppings(
             )
         # print(req)
         
-        operating_points = {
-            8: 5500,
-            16: 5400,
-            32: 5250,
-            64: 5000,
-            128: 4500,
-        }  # operating point, fn of max rank, ND96asrv 8xA100 80GB
+        # operating_points = {
+        #     8: 5500,
+        #     16: 5400,
+        #     32: 5250,
+        #     64: 5000,
+        #     128: 4500,
+        # }  # operating point, fn of max rank, ND96asrv 8xA100 80GB
+        
+        operating_points = {8: 5950, 16: 5150, 32: 4700, 64: 5050, 128: 4650} # prod 7b tp1, NC24ads
         
         #! todo, select server with toppings algo
         chosen_server = servers[0]
@@ -524,13 +528,14 @@ async def benchmark_system(
             #     64: 2625,
             #     128: 2525,
             # }  # operating point, fn of max rank, 4xA100 80GB
-            server_tps = {
-                8: 5500,
-                16: 5400,
-                32: 5250,
-                64: 5000,
-                128: 4500,
-            }  # operating point, fn of max rank, ND96asrv 8xA100 80GB
+            # server_tps = {
+            #     8: 5500,
+            #     16: 5400,
+            #     32: 5250,
+            #     64: 5000,
+            #     128: 4500,
+            # }  # operating point, fn of max rank, ND96asrv 8xA100 80GB
+            server_tps = {8: 5950, 16: 5150, 32: 4700, 64: 5050, 128: 4650} # prod 7b tp1, NC24ads
 
             rank_instance_demand = {}
             for rank, tps in rank_wise_demand.items():
@@ -546,9 +551,9 @@ async def benchmark_system(
             server_max_rank = [0] * num_servers
 
             target_util = total_instance_demand / len(servers)
-            assert (
-                target_util <= 1
-            ), f"Target utilization exceeds 1, need more servers: {target_util}"
+            # assert (
+            #     target_util <= 1
+            # ), f"Target utilization exceeds 1, need more servers: {target_util}"
 
             with open("allocation_log.txt", "a") as f:
                 f.write("\n\n************************************")
@@ -570,9 +575,9 @@ async def benchmark_system(
             sorted_budgets = sorted(
                 rank_instance_budget, key=lambda x: x[1], reverse=True
             )
-            assert (
-                sum(budget for _, budget in rank_instance_budget) <= num_servers
-            ), "Exceeded server budget"
+            # assert (
+            #     sum(budget for _, budget in rank_instance_budget) <= num_servers
+            # ), "Exceeded server budget"
 
             # * rounding
             rounded_budgets = [
@@ -742,31 +747,65 @@ async def benchmark_system(
                     round_robin_server_idx = (round_robin_server_idx + 1) % num_servers
                     continue
 
-                while (
-                    expected_util > 1e-3
-                    and server_idx < num_servers
-                    and not allocated_adapter
-                ):
-                    if (
-                        server_max_rank[server_idx] >= adapter_rank
-                        and server_util[server_idx] < target_util
-                    ):
-                        max_addable_util = min(
-                            target_util - server_util[server_idx], expected_util
-                        )
-                        adapter_groups[server_idx].append(
+                # while (
+                #     expected_util > 1e-3
+                #     and server_idx < num_servers
+                #     and not allocated_adapter
+                # ):
+                #     if (
+                #         server_max_rank[server_idx] >= adapter_rank
+                #         and server_util[server_idx] < target_util
+                #     ):
+                #         max_addable_util = min(
+                #             target_util - server_util[server_idx], expected_util
+                #         )
+                #         adapter_groups[server_idx].append(
+                #             [adapter_name, max_addable_util / _expected_util]
+                #         )
+                #         server_occupied_tps[server_idx] += (
+                #             max_addable_util * server_tps[adapter_rank]
+                #         )
+                #         server_max_rank[server_idx] = max(
+                #             server_max_rank[server_idx], adapter_rank
+                #         )
+                #         server_util[server_idx] += max_addable_util
+                #         expected_util -= max_addable_util
+                #     server_idx += 1
+
+                server_available = True
+                while expected_util > 1e-3 and server_available and not allocated_adapter:
+                    chosen_server = -1
+                    max_addable_util = -np.inf
+                    for server_idx in range(num_servers):
+                        if (
+                            server_max_rank[server_idx] >= adapter_rank
+                            and server_util[server_idx] < target_util
+                        ):
+                            possible_addable_util = min(
+                                target_util - server_util[server_idx], expected_util
+                            )
+                            if possible_addable_util > max_addable_util:
+                                max_addable_util = possible_addable_util
+                                chosen_server = server_idx
+                    if chosen_server >= 0:
+                        adapter_groups[chosen_server].append(
                             [adapter_name, max_addable_util / _expected_util]
                         )
-                        server_occupied_tps[server_idx] += (
+                        server_occupied_tps[chosen_server] += (
                             max_addable_util * server_tps[adapter_rank]
                         )
-                        server_max_rank[server_idx] = max(
-                            server_max_rank[server_idx], adapter_rank
+                        server_max_rank[chosen_server] = max(
+                            server_max_rank[chosen_server], adapter_rank
                         )
-                        server_util[server_idx] += max_addable_util
+                        server_util[chosen_server] += max_addable_util
                         expected_util -= max_addable_util
-                    server_idx += 1
-
+                    else:
+                        server_available = False
+                        
+                    if expected_util < 1e-3:
+                        allocated_adapter = True
+                    
+                
                 if expected_util == 0:
                     allocated_adapter = True
 
