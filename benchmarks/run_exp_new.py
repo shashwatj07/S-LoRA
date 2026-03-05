@@ -471,6 +471,23 @@ async def benchmark_system(
         lambda: deque()
     )  # adapter -> deque of (window end time, tps), with newest on right
 
+    # --- Cold miss tracking ---
+    # Build initial per-server adapter sets from the incoming server_map (adapter -> server)
+    prev_server_to_adapters = defaultdict(set)  # server -> set of adapter names
+    for adapter, srv in server_map.items():
+        if isinstance(srv, list):
+            for s in srv:
+                prev_server_to_adapters[s].add(adapter)
+        else:
+            prev_server_to_adapters[srv].add(adapter)
+    # Cold miss tracking starts after first reallocation (step >= 1); initial adapters are not "new"
+    cold_miss_remaining = defaultdict(set)  # server -> set of adapters not yet hit
+    # Per (step_idx, server): (set_of_new_adapters, list_of_cold_miss_task_indices, total_req_count)
+    cold_miss_step_data = {}  # (step_idx, server) -> [set(new_adapters), [task_indices], [arrival_times], req_count]
+    current_cold_step = 0  # tracks which step current dispatches belong to
+    cold_step_time_ranges = {0: [0.0, None]}  # step_idx -> [start_time, end_time] in request-time seconds
+    # --- End cold miss tracking init ---
+
     for req in input_requests:
         arrival_time = start + req.req_time
         if req.req_time > last_time.req_time // 1 + step:
@@ -923,9 +940,26 @@ async def benchmark_system(
                     else:
                         server_map[adapter].append(server_rename_map[server])
 
+            # --- Cold miss: compute new adapters for the new allocation ---
+            current_server_to_adapters = defaultdict(set)
+            for i_srv, server_url in enumerate(servers):
+                for adapter_name_ag, _ in adapter_groups[i_srv]:
+                    current_server_to_adapters[server_url].add(adapter_name_ag)
+            # Determine newly placed adapters per server
+            cold_miss_remaining = defaultdict(set)
+            for srv_url in set(list(current_server_to_adapters.keys()) + list(prev_server_to_adapters.keys())):
+                new_adapters_on_srv = current_server_to_adapters.get(srv_url, set()) - prev_server_to_adapters.get(srv_url, set())
+                cold_miss_remaining[srv_url] = set(new_adapters_on_srv)
+            prev_server_to_adapters = current_server_to_adapters
+            # --- End cold miss new-adapter computation ---
+
             prev_alloc = adapter_groups.copy()
             prev_rank_assigned_instances = rank_assigned_instances.copy()
+            # Close previous step's time range and open a new one
+            cold_step_time_ranges[current_cold_step][1] = req.req_time
             step_idx += 1
+            current_cold_step = step_idx  # set AFTER increment so post-reallocation requests get a new step
+            cold_step_time_ranges[current_cold_step] = [req.req_time, None]
             last_time = req
             
             alloc_end = time.time()
@@ -968,6 +1002,23 @@ async def benchmark_system(
 
         # print(f"Request {req.req_id} for adapter {req.adapter_dir} assigned to server {chosen_server} at time {req.req_time}", flush=True)
 
+        # --- Cold miss detection (only after first reallocation, step >= 1) ---
+        is_cold_miss = False
+        if current_cold_step >= 1 and chosen_server is not None and req.adapter_dir in cold_miss_remaining.get(chosen_server, set()):
+            is_cold_miss = True
+            cold_miss_remaining[chosen_server].discard(req.adapter_dir)
+        if current_cold_step >= 1:
+            task_index = len(tasks)
+            key = (current_cold_step, chosen_server)
+            if key not in cold_miss_step_data:
+                cold_miss_step_data[key] = [set(), [], [], 0]  # [cold_miss_adapter_names, task_indices, arrival_times, req_count]
+            cold_miss_step_data[key][3] += 1  # total request count
+            if is_cold_miss:
+                cold_miss_step_data[key][0].add(req.adapter_dir)  # record which adapter had the cold miss
+                cold_miss_step_data[key][1].append(task_index)  # store task index for TTFT lookup
+                cold_miss_step_data[key][2].append(round(req.req_time, 4))  # arrival time
+        # --- End cold miss detection ---
+
         task = asyncio.create_task(
             send_request(
                 backend,
@@ -985,6 +1036,32 @@ async def benchmark_system(
         )
         tasks.append(task)
     latency = await asyncio.gather(*tasks)
+
+    # --- Cold miss: write CSV ---
+    # Close the final step's time range
+    if input_requests:
+        cold_step_time_ranges[current_cold_step][1] = input_requests[-1].req_time
+    with open("cold_misses.csv", "w") as cm_f:
+        cm_f.write("step_idx,step_time_range,server,new_adapters,num_cold_miss_req,perc_cold_miss_req,cold_miss_req_ttfts,cold_miss_req_arrival_times\n")
+        for (s_idx, srv), (cold_miss_adapters, cold_task_indices, cold_arrival_times, total_reqs) in sorted(cold_miss_step_data.items()):
+            t_start, t_end = cold_step_time_ranges.get(s_idx, [0.0, 0.0])
+            time_range_str = f"{t_start:.0f}-{t_end:.0f}s"
+            new_adapters_list = sorted(cold_miss_adapters)  # only adapters that actually had cold miss requests
+            num_cold = len(cold_task_indices)
+            perc_cold = (num_cold / total_reqs * 100.0) if total_reqs > 0 else 0.0
+            cold_ttfts = []
+            for t_idx in cold_task_indices:
+                result = latency[t_idx]
+                if result is not None and len(result) > 3 and result[3] is not None:
+                    cold_ttfts.append(round(result[3], 6))
+            # Format lists as semicolon-separated quoted strings for CSV
+            new_adapters_str = '"' + ';'.join(new_adapters_list) + '"'
+            ttfts_str = '"' + ';'.join(str(t) for t in cold_ttfts) + '"'
+            arrival_times_str = '"' + ';'.join(str(t) for t in cold_arrival_times) + '"'
+            cm_f.write(f"{s_idx},{time_range_str},{srv},{new_adapters_str},{num_cold},{perc_cold:.4f},{ttfts_str},{arrival_times_str}\n")
+    print(f"Cold miss data written to cold_misses.csv ({len(cold_miss_step_data)} rows)")
+    # --- End cold miss CSV ---
+
     return latency
 
 def get_adapter_dirs(num_adapters, adapter_dirs, backend=None):
