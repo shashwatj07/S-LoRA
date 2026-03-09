@@ -174,7 +174,7 @@ OVERALL_P95_TTFT_2 =  3.4420220732688858
 # print("Saved plot3_cold_miss_percentage.png")
 
 # ── Plot 2: Timeline Scatter with P95 Threshold Line ────────
-fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(6, 4), dpi=256, sharex=False, sharey=False)
+fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(4.4, 2.2), dpi=256, sharex=False, sharey=False)
 
 axes[0].scatter(df_exp_1["arrival_time"] - 540, df_exp_1["ttft"],
            s=30, zorder=5, color="#4C72B0", edgecolors="black", linewidth=0.4,
@@ -213,7 +213,8 @@ axes[0].yaxis.set_major_formatter(mticker.FormatStrFormatter('%.1f'))
 # axes[0].set_xlim(df_exp_1["arrival_time"].min() - 10, 900)
 axes[0].set_xlim(0, 360)
 axes[0].set_xticks(np.arange(0, 361, 60))
-axes[0].set_yticks(np.arange(0, 2.1, 0.5))
+axes[0].set_xticklabels([0, 1, 2, 3, 4, 5, 6])
+axes[0].set_yticks(np.arange(0, 3.1, 1))
 
 
 axes[1].scatter(df_exp_2["arrival_time"] - 240, df_exp_2["ttft"],
@@ -246,17 +247,18 @@ axes[1].text(0.97, 0.93, f"{total} cold misses",
 # axes[1].set_title("Production 25 RPS", fontsize=10)
 axes[1].grid(alpha=0.3)
 ymax2 = max(OVERALL_P95_TTFT_2, df_exp_2["ttft"].max()) * 1.25
-axes[1].set_ylim(0, 5)
+axes[1].set_ylim(0, 6)
 axes[1].yaxis.set_major_formatter(mticker.FormatStrFormatter('%.1f'))
 # axes[1].set_xlim(df_exp_2["arrival_time"].min() - 10, 600)
 axes[1].set_xlim(0, 360)
 axes[1].set_xticks(np.arange(0, 361, 60))
+axes[1].set_xticklabels([0, 1, 2, 3, 4, 5, 6])
 # axes[1].set_yticks(np.arange(0, 5.1, 0.5))
 
 # Single shared title, axis labels, and legend
 # fig.suptitle("Cold Miss TTFTs", fontsize=12, y=1.02)
-fig.supxlabel("Request Arrival Time (s)", fontsize=12)
-fig.supylabel("TTFT (s)", fontsize=12)
+fig.supxlabel("Request Arrival Time (min)", fontsize=12, y=0.1)
+fig.supylabel("TTFT (s)", fontsize=12, x=0.05)
 
 # Shared legend: scatter handle from axes[0], P95 handles from both
 h0, l0 = axes[0].get_legend_handles_labels()  # [scatter, P95_1]
@@ -269,7 +271,7 @@ labels  = [l0[0], l0[1]]
 
 # fig.tight_layout(rect=[0.03, 0.03, 1, 0.93])
 fig.tight_layout()
-fig.subplots_adjust(top=0.82)
+fig.subplots_adjust(top=0.75)
 fig.legend(handles, labels,
            loc="upper center", bbox_to_anchor=(0.5, 0.95),
            ncol=2, fontsize=10, frameon=True,
