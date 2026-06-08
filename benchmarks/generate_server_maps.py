@@ -26,20 +26,21 @@ def reset_allocation_log():
 
 reset_allocation_log()
 
-rps_list = [56, 60, 64, 68]
+rps_list = [92, 96, 100, 104]
 
 for rps in tqdm(rps_list):
-    TRACE_FILE = f"/home/azureuser/localfiles/S-LoRA/benchmarks/5h/uniform_poisson_{rps}.0_900_100_adapters.csv"
-    servers = [
-        "http://10.0.0.1:8000",
-        "http://10.0.0.2:8000",
-        "http://10.0.0.3:8000",
-        "http://10.0.0.4:8000",
-        "http://10.0.0.5:8000",
-        "http://10.0.0.6:8000",
-        "http://10.0.0.7:8000",
-        "http://10.0.0.8:8000",
-    ]
+    TRACE_FILE = f"/mnt/azureml/cr/j/cae6a274882a40fd989ea638f3ad94fd/exe/wd/S-LoRA/benchmarks/5h/uniform_poisson_{rps}.0_600_150_adapters.csv"
+    # servers = [
+    #     "http://10.0.0.1:8000",
+    #     "http://10.0.0.2:8000",
+    #     "http://10.0.0.3:8000",
+    #     "http://10.0.0.4:8000",
+    #     "http://10.0.0.5:8000",
+    #     "http://10.0.0.6:8000",
+    #     "http://10.0.0.7:8000",
+    #     "http://10.0.0.8:8000",
+    # ]
+    servers = [f"http://10.0.0.{i}:8000" for i in range(1, 13)]
     # servers = ["http://10.0.0.1:8000", "http://10.0.0.2:8000", "http://10.0.0.3:8000", "http://10.0.0.4:8000"]
     # servers = ["http://10.0.0.1:8000", "http://10.0.0.2:8000"]
     server_map_folder = (
@@ -50,8 +51,9 @@ for rps in tqdm(rps_list):
     os.makedirs(f"{server_map_folder}/system", exist_ok=True)
     os.makedirs(f"{server_map_folder}/baseline", exist_ok=True)
     os.makedirs(f"{server_map_folder}/contiguous", exist_ok=True)
+    os.makedirs(f"{server_map_folder}/toppings", exist_ok=True)
 
-    backend = "system"
+    backend = "toppings"
     step = 60
 
     @total_ordering
@@ -777,3 +779,43 @@ for rps in tqdm(rps_list):
 
     with open(f"{server_map_folder}/contiguous/server_map.json", "w") as f:
         json.dump(contiguous_server_map, f, indent=4)
+        
+    operating_points = {
+        8: 5500,
+        16: 5400,
+        32: 5250,
+        64: 5000,
+        128: 4500,
+    } # operating point, fn of max rank, ND96asrv 8xA100 80GB
+    ranks = [8, 16, 32, 64, 128]
+    avg_decode = 70
+
+    # Use the same canonical server list as the other backends in this loop.
+    servers = sorted(set(flatten_dict_values(server_map))) if server_map else servers
+    remaining_prefills_per_server = {s: {r: 0 for r in ranks} for s in servers}
+
+    toppings_csv = (
+        f"{server_map_folder}/toppings/"
+        f"{TRACE_FILE.split('/')[-1].replace('_150_adapters.csv', '.csv')}"
+    )
+    with open(toppings_csv, "w") as f:
+        f.write("req_id,model_dir,adapter_dir,prompt_len,output_len,req_time,server\n")
+        for req in requests:
+            # cost = sum over ranks of (remaining_prefills + avg_decode) / op_point[rank]
+            chosen_server = servers[0]
+            min_cost = float("inf")
+            for s in servers:
+                cost = 0.0
+                for r in ranks:
+                    cost += (remaining_prefills_per_server[s][r] + avg_decode) / operating_points[r]
+                if cost < min_cost:
+                    min_cost = cost
+                    chosen_server = s
+
+            rank = int(re.search(r"rank-(\d+)", req.adapter_dir).group(1))
+            remaining_prefills_per_server[chosen_server][rank] += req.prompt_len
+
+            f.write(
+                f"{req.req_id},{req.model_dir},{req.adapter_dir},"
+                f"{req.prompt_len},{req.output_len},{req.req_time:.6f},{chosen_server}\n"
+            )

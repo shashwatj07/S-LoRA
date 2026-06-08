@@ -71,7 +71,7 @@ async def send_request(
     else:
         url = server + "/generate_stream"
 
-    if backend in ["dm", "system", "baseline", "contiguous"]:
+    if backend in ["dm", "system", "baseline", "contiguous", "toppings"]:
         data = {
             "model_dir": model_dir,
             "lora_dir": adapter_dir,
@@ -406,7 +406,7 @@ def run_exp(
     # first generate your data using real_trace/clean_chat_data.py
     # base_model = BASE_MODEL[model_setting]
     # adapter_dirs = LORA_DIR[model_setting]
-    if backend == "system":
+    if backend in ["system", "toppings"]:
         adapter_dirs, requests, routed_servers = read_requests(trace_file=trace_file, servers_flag=True)
     else:
         adapter_dirs, requests = read_requests(trace_file=trace_file, servers_flag=False)
@@ -432,7 +432,7 @@ def run_exp(
         for req in requests[:4]:
             print(req)
     
-    if backend == "system":
+    if backend in ["system", "toppings"]:
         benchmark_start_time = time.time()
         per_req_latency = asyncio.run(
             benchmark_from_servermaps(
@@ -473,7 +473,7 @@ if __name__ == "__main__":
         "--backend",
         type=str,
         required=True,
-        choices=["system", "baseline", "contiguous"],
+        choices=["system", "baseline", "contiguous", "toppings"],
     )
 
     # parser.add_argument("--model-setting", type=str, default="S1")

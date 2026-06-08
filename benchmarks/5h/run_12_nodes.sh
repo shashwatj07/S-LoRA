@@ -1,16 +1,16 @@
 #!/bin/bash
 set -x
 
-rps_list=(88 92 96 100)
+rps_list=(92 96 100 104)
 num_servers=12
 # backends=("baseline" "contiguous" "system")
-backends=("system")
+backends=("toppings")
 
-python ../run_exp_new.py --trace-file-path warmup.csv --servers "http://127.0.0.1:8000" --output warmup.txt --backend baseline --warmup-time 0 --warmup-requests 0
+python ../run_exp_new.py --trace-file-path ../warmup.csv --servers "http://127.0.0.1:8000" --output warmup.txt --backend baseline --warmup-time 0 --warmup-requests 0
 
 for rps in "${rps_list[@]}"; do
     duration=600
-    trace_file_path="../server_maps/uniform_poisson_${rps}.0_${duration}_150_adapters_server_maps_${num_servers}_servers/system/uniform_poisson_${rps}.0_${duration}.csv"
+    trace_file_path="../server_maps/uniform_poisson_${rps}.0_${duration}_150_adapters_server_maps_${num_servers}_servers/toppings/uniform_poisson_${rps}.0_${duration}.csv"
 
     for backend in "${backends[@]}"; do
         mkdir -p ../../../outputs/scalability_exp5h/uniform_poisson_${rps}.0_${duration}_${num_servers}_servers/${backend}
